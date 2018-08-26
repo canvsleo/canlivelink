@@ -1,0 +1,21 @@
+<?xml version='1.0' ?>
+<BuildGraph xmlns="http://www.epicgames.com/BuildGraph" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.epicgames.com/BuildGraph ../../../Engine/Build/Graph/Schema.xsd" >
+  <Property Name="LocalSourceDir" Value="$(RootDir)\Engine\Source\Programs\MaxLiveLinkPlugin"/>
+  <Property Name="LocalStagingDir" Value="$(LocalSourceDir)\Staging"/>
+  <Property Name="LocalBinaryDir" Value="$(RootDir)\Engine\Binaries\Win64"/>
+  
+  <Agent Name="MaxLiveLinkPlugin" Type="Win64">
+    <Node Name="Compile UnrealHeaderTool Win64">
+      <Compile Target="UnrealHeaderTool" Platform="Win64" Configuration="Development" Arguments="-precompile -nodebuginfo"/>
+    </Node>
+
+    <Node Name="Compile Max 2016 Win64" Requires="Compile UnrealHeaderTool Win64">
+      <Compile Target="MaxLiveLinkPlugin2016" Platform="Win64" Configuration="Development" />
+    </Node>
+	
+	<Node Name="Stage Max Plugin Module" Requires="Compile Max 2016 Win64">
+		<Copy From="$(LocalBinaryDir)\MaxLiveLinkPlugin2016.dlu" To="$(LocalStagingDir)\MaxLiveLink2016\LiveLink\plug-ins\MaxLiveLinkPlugin2016.dlu" />
+		<Zip FromDir="$(LocalStagingDir)" ZipFile="$(LocalStagingDir)\LiveLinkMax.zip"/>
+	</Node>
+  </Agent>
+</BuildGraph>

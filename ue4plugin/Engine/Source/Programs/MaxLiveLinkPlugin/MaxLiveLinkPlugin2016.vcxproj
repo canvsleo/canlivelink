@@ -1,0 +1,137 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug_Program|Win32">
+      <Configuration>Debug_Program</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug_Program|x64">
+      <Configuration>Debug_Program</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Development_Program|Win32">
+      <Configuration>Development_Program</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Development_Program|x64">
+      <Configuration>Development_Program</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{61019A84-1183-4E7E-99D5-9096C2D6B573}</ProjectGuid>
+    <Keyword>MakeFileProj</Keyword>
+    <RootNamespace>MaxLiveLinkPlugin2016</RootNamespace>
+    <PlatformToolset>v140</PlatformToolset>
+    <MinimumVisualStudioVersion>14.0</MinimumVisualStudioVersion>
+    <TargetRuntime>Native</TargetRuntime>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <PropertyGroup Label="UserMacros" />
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|Win32'">
+    <IncludePath />
+    <ReferencePath />
+    <LibraryPath />
+    <LibraryWPath />
+    <SourcePath />
+    <ExcludePath />
+    <OutDir>$(ProjectDir)..\..\Build\Unused\</OutDir>
+    <IntDir>$(ProjectDir)..\..\Build\Unused\</IntDir>
+    <NMakeBuildCommandLine>..\..\..\Build\BatchFiles\Build.bat MaxLiveLinkPlugin2016 Win32 Debug -WaitMutex -FromMsBuild</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>..\..\..\Build\BatchFiles\Rebuild.bat MaxLiveLinkPlugin2016 Win32 Debug -WaitMutex -FromMsBuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>..\..\..\Build\BatchFiles\Clean.bat MaxLiveLinkPlugin2016 Win32 Debug -WaitMutex -FromMsBuild</NMakeCleanCommandLine>
+    <NMakeOutput>..\..\..\Binaries\Win32\MaxLiveLinkPlugin2016-Win32-Debug.exe</NMakeOutput>
+  </PropertyGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Program|x64'">
+    <IncludePath />
+    <ReferencePath />
+    <LibraryPath />
+    <LibraryWPath />
+    <SourcePath />
+    <ExcludePath />
+    <OutDir>C:\Program Files\Autodesk\3ds Max 2016\plugins</OutDir>
+    <IntDir>$(ProjectDir)..\Build\Unused\</IntDir>
+    <NMakeBuildCommandLine>D:\project\UnrealEngine-release\Engine\Build\BatchFiles\Build.bat MaxLiveLinkPlugin2016 Win64 Debug -WaitMutex -FromMsBuild</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>D:\project\UnrealEngine-release\Engine\Build\BatchFiles\Rebuild.bat MaxLiveLinkPlugin2016 Win64 Debug -WaitMutex -FromMsBuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>D:\project\UnrealEngine-release\Engine\Build\BatchFiles\Clean.bat MaxLiveLinkPlugin2016 Win64 Debug -WaitMutex -FromMsBuild</NMakeCleanCommandLine>
+    <NMakeOutput>D:\project\UnrealEngine-release\Engine\Binaries\Win64\MaxLiveLinkPlugin2016-Win64-Debug.exe</NMakeOutput>
+  </PropertyGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|Win32'">
+    <IncludePath />
+    <ReferencePath />
+    <LibraryPath />
+    <LibraryWPath />
+    <SourcePath />
+    <ExcludePath />
+    <OutDir>$(ProjectDir)..\Build\Unused\</OutDir>
+    <IntDir>$(ProjectDir)..\Build\Unused\</IntDir>
+    <NMakeBuildCommandLine>..\..\Build\BatchFiles\Build.bat MaxLiveLinkPlugin2016 Win32 Development -WaitMutex -FromMsBuild</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>..\..\Build\BatchFiles\Rebuild.bat MaxLiveLinkPlugin2016 Win32 Development -WaitMutex -FromMsBuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>..\..\Build\BatchFiles\Clean.bat MaxLiveLinkPlugin2016 Win32 Development -WaitMutex -FromMsBuild</NMakeCleanCommandLine>
+    <NMakeOutput>..\..\Binaries\Win32\MaxLiveLinkPlugin2016.exe</NMakeOutput>
+  </PropertyGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development_Program|x64'">
+    <IncludePath />
+    <ReferencePath />
+    <LibraryPath />
+    <LibraryWPath />
+    <SourcePath />
+    <ExcludePath />
+    <OutDir>$(ProjectDir)..\Build\Unused\</OutDir>
+    <IntDir>$(ProjectDir)..\Build\Unused\</IntDir>
+    <NMakeBuildCommandLine>..\..\Build\BatchFiles\Build.bat MaxLiveLinkPlugin2016 Win64 Development -WaitMutex -FromMsBuild</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>..\..\Build\BatchFiles\Rebuild.bat MaxLiveLinkPlugin2016 Win64 Development -WaitMutex -FromMsBuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>..\..\Build\BatchFiles\Clean.bat MaxLiveLinkPlugin2016 Win64 Development -WaitMutex -FromMsBuild</NMakeCleanCommandLine>
+    <NMakeOutput>..\..\Binaries\Win64\MaxLiveLinkPlugin2016.exe</NMakeOutput>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="MaxLiveLinkPlugin2016.Target.cs" />
+    <None Include="BuildMaxPlugin.Bat" />
+    <None Include="BuildMaxPlugin.xml" />
+    <ClCompile Include="MaxLiveLinkPlugin.cpp" />
+    <None Include="MaxLiveLinkPlugin2016.Build.cs" />
+    <None Include="ReadMe.txt" />
+  </ItemGroup>
+  <PropertyGroup>
+    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions);IS_PROGRAM=1;ENABLE_PGO_PROFILE=0;WITH_DEV_AUTOMATION_TESTS=1;WITH_PERF_AUTOMATION_TESTS=1;__UNREAL__;IS_MONOLITHIC=1;WITH_ENGINE=0;WITH_UNREAL_DEVELOPER_TOOLS=0;WITH_COREUOBJECT=1;USE_STATS_WITHOUT_ENGINE=0;WITH_PLUGIN_SUPPORT=0;WITH_PERFCOUNTERS=0;USE_LOGGING_IN_SHIPPING=0;WITH_LOGGING_TO_MEMORY=0;USE_CACHE_FREED_OS_ALLOCS=1;USE_CHECKS_IN_SHIPPING=0;UE_BUILD_MINIMAL=1;WITH_EDITOR=0;WITH_SERVER_CODE=1;WITH_CEF3=1;WITH_XGE_CONTROLLER=0;UBT_MODULE_MANIFEST="MaxLiveLinkPlugin2016.modules";UBT_MODULE_MANIFEST_DEBUGGAME="MaxLiveLinkPlugin-Win64-DebugGame.modules";UBT_COMPILED_PLATFORM=Win64;UBT_COMPILED_TARGET=Program;WIN32=1;_WIN32_WINNT=0x0601;WINVER=0x0601;PLATFORM_WINDOWS=1;DEPTH_32_BIT_CONVERSION=0;PROJECT_COPYRIGHT_STRING=Fill out your copyright notice in the Description page of Project Settings.;PROJECT_PRODUCT_NAME=UE4Game;NDEBUG=1;UE_BUILD_DEVELOPMENT=1;ORIGINAL_FILE_NAME="MayaLiveLinkPlugin2016.dll";UE_IS_ENGINE_MODULE=0;UE_BUILD_DEVELOPMENT_WITH_DEBUGGAME=0;IMPLEMENT_ENCRYPTION_KEY_REGISTRATION()=;IMPLEMENT_SIGNING_KEY_REGISTRATION()=;DEPRECATED_FORGAME=DEPRECATED;UE_ENABLE_ICU=0;WITH_VS_PERF_PROFILER=0;WITH_DIRECTXMATH=0;WITH_MALLOC_STOMP=1;CORE_API=DLLEXPORT;COREUOBJECT_API=DLLEXPORT;APPLICATIONCORE_API=DLLEXPORT;RHI_API=DLLEXPORT;LOAD_PLUGINS_FOR_TARGET_PLATFORMS=0;PROJECTS_API=DLLEXPORT;JSON_API=DLLEXPORT;UDPMESSAGING_API=DLLEXPORT;LIVELINKINTERFACE_API=DLLEXPORT;TIMEMANAGEMENT_API=DLLEXPORT;SLATE_PARENT_POINTERS=1;WITH_FREETYPE=1;SLATECORE_API=DLLEXPORT;INPUTCORE_API=DLLEXPORT;SLATE_API=DLLEXPORT;WITH_UNREALPNG=1;WITH_UNREALJPEG=1;WITH_UNREALEXR=1;IMAGEWRAPPER_API=DLLEXPORT;WITH_PHYSX=1;WITH_APEX=1;WITH_APEX_CLOTHING=1;WITH_CLOTH_COLLISION_DETECTION=1;WITH_PHYSX_COOKING=1;WITH_NVCLOTH=1;GPUPARTICLE_LOCAL_VF_ONLY=0;ENGINE_API=DLLEXPORT;MESSAGING_API=DLLEXPORT;MESSAGINGCOMMON_API=DLLEXPORT;RENDERCORE_API=DLLEXPORT;SHADERCORE_API=DLLEXPORT;UTILITYSHADERS_API=DLLEXPORT;ASSETREGISTRY_API=DLLEXPORT;ENGINEMESSAGES_API=DLLEXPORT;ENGINESETTINGS_API=DLLEXPORT;SYNTHBENCHMARK_API=DLLEXPORT;RENDERER_API=DLLEXPORT;GAMEPLAYTAGS_API=DLLEXPORT;DATABASESUPPORT_API=DLLEXPORT;PACKETHANDLER_API=DLLEXPORT;RELIABILITYHANDLERCOMPONENT_API=DLLEXPORT;AUDIOPLATFORMCONFIGURATION_API=DLLEXPORT;MESHDESCRIPTION_API=DLLEXPORT;CLOTHINGSYSTEMRUNTIMEINTERFACE_API=DLLEXPORT;NETWORKREPLAYSTREAMING_API=DLLEXPORT;AUDIOMIXER_API=DLLEXPORT;UELIBSAMPLERATE_API=DLLEXPORT;ANIMATIONCORE_API=DLLEXPORT;LIVELINKMESSAGEBUSFRAMEWORK_API=DLLEXPORT;WIN32;WIN64;_UNICODE</NMakePreprocessorDefinitions>
+    <NMakeIncludeSearchPath>$(NMakeIncludeSearchPath);D:\project\UnrealEngine-release\Engine\Source;D:\project\UnrealEngine-release\Engine\Source\Runtime\Launch\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Launch\Private;D:\project\UnrealEngine-release\Engine\Source\Runtime;D:\project\UnrealEngine-release\Engine\Source\Runtime\Core\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\CoreUObject\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\ApplicationCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\RHI\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Projects\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Json\Public;D:\project\UnrealEngine-release\Engine\Plugins\Messaging\UdpMessaging\Source;D:\project\UnrealEngine-release\Engine\Plugins\Messaging\UdpMessaging\Source\UdpMessaging\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\LiveLinkInterface\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\TimeManagement\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\SlateCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\InputCore\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\InputCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Slate\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\ImageWrapper\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Engine\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\Engine\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Messaging\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\MessagingCommon\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\RenderCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\ShaderCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\UtilityShaders\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\AssetRegistry\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\EngineMessages\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\EngineSettings\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\EngineSettings\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\SynthBenchmark\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\Renderer\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\GameplayTags\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\GameplayTags\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\DatabaseSupport\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\PacketHandlers;D:\project\UnrealEngine-release\Engine\Source\Runtime\PacketHandlers\PacketHandler\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\PacketHandlers\PacketHandler\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\PacketHandlers\ReliabilityHandlerComponent\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\AudioPlatformConfiguration\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\MeshDescription\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\ClothingSystemRuntimeInterface\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\NetworkReplayStreaming;D:\project\UnrealEngine-release\Engine\Source\Runtime\NetworkReplayStreaming\NetworkReplayStreaming\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\AudioMixer\Classes;D:\project\UnrealEngine-release\Engine\Source\Runtime\AudioMixer\Public;D:\project\UnrealEngine-release\Engine\Source\ThirdParty;D:\project\UnrealEngine-release\Engine\Source\ThirdParty\libSampleRate\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\AnimationCore\Public;D:\project\UnrealEngine-release\Engine\Source\Runtime\LiveLinkMessageBusFramework\Public;D:\project\UnrealEngine-release\Engine\Source\Programs;C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Tools\MSVC\14.14.26428\INCLUDE;C:\Program Files (x86)\Windows Kits\NETFXSDK\4.6\include\um;C:\Program Files (x86)\Windows Kits\10\include\10.0.17134.0\ucrt;C:\Program Files (x86)\Windows Kits\10\include\10.0.17134.0\shared;C:\Program Files (x86)\Windows Kits\10\include\10.0.17134.0\um;C:\Program Files (x86)\Windows Kits\10\include\10.0.17134.0\winrt</NMakeIncludeSearchPath>
+    <NMakeForcedIncludes>$(NMakeForcedIncludes)</NMakeForcedIncludes>
+    <NMakeAssemblySearchPath>$(NMakeAssemblySearchPath)</NMakeAssemblySearchPath>
+    <NMakeForcedUsingAssemblies>$(NMakeForcedUsingAssemblies)</NMakeForcedUsingAssemblies>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
