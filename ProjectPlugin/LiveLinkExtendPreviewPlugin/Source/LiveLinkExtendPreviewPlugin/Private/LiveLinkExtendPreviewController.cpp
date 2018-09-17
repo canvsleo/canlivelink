@@ -21,7 +21,7 @@
 
 #include "MeshUtilities.h"
 
-#include "MorphTarget.generated.h"
+#include "Animation/MorphTarget.h"
 
 
 const FName EditorCamera ( TEXT( "EditorActiveCamera" ) );
@@ -164,7 +164,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 										UMorphTarget* morphTarget = FindObject<UMorphTarget>( skeltalMesh, *meshName );
 										if( morphTarget )
 										{
-											int a = 0;
+											//! TODO : Not Implemented.
 										}
 										
 										for( const auto& materialGroup : materialGroupList )
