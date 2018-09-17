@@ -60,6 +60,9 @@ bool GIsConsoleExecutable;
 #include "Tab.h"
 #include "Animatable.h"
 #include "MeshNormalSpec.h"
+#include "IGame/IGameModifier.h"
+
+#include "MorphR3.h"
 
 using NodeArray = TArray<INode*>;
 
@@ -156,6 +159,7 @@ public:
 		CollectOptionBits_Dummy				= 0x1 << 12,
 
 		CollectOptionBits_SkinedMesh		= 0x1 << 20,
+		CollectOptionBits_MorphMesh			= 0x1 << 21,
 
 		CollectOptionBits_AllTypes =
 		CollectOptionBits_Mesh
@@ -210,10 +214,14 @@ private:
 	HWND				listSubject_;
 
 	ICustButton*		buttonAddCameraSubject_;
+	ICustButton*		buttonSendMesh_;
+
 
 
 	FMaxLiveLinkCameraStreamedSubject*			editViewCameraSubject_;
 
+	bool useForceFrontX_Cache_;
+	bool useSendMeshAutomatically_Cache_;
 
 
 	TMap< FString, FMaxLiveLinkJointStreamedSubject* >	skinNodeSubjectList_;
@@ -222,6 +230,9 @@ private:
 public:
 	void	InitializeDialog( HWND hWnd );
 	void	FinalizeDialog();
+
+	bool	UseForceFrontAxisX() const;
+	bool	UseMeshUpdateAutomatically() const;
 
 	void	OnReceiveDialogCallbackCommand( WPARAM wParam );
 	void	OnReceiveEnterEditCallbackCommand( WPARAM wParam );
@@ -233,6 +244,7 @@ public:
 
 	void	ReceiveChangeGeometoryNodes( const TArray<INode*>& nodes );
 
+	void	ApplyCurrentFrameSubjects( bool forceUpdateMesh = false );
 
 	TimeValue	GetBindPoseTime() const;
 
@@ -242,6 +254,59 @@ private:
 public:
 	void	ModelOtherEvent();
 	void	OnDisplay( TimeValue t, ViewExp *vpt, int flags );
+
+
+	FMatrix	GetPointConvertMatrix() const
+	{
+		FMatrix matrix;
+
+		if( this->UseForceFrontAxisX() )
+		{
+			matrix.M[ 0 ][ 0 ] = 0.0f;
+			matrix.M[ 0 ][ 1 ] = 1.0f;
+			matrix.M[ 0 ][ 2 ] = 0.0f;
+			matrix.M[ 0 ][ 3 ] = 0.0f;
+
+			matrix.M[ 1 ][ 0 ] = 0.0f;
+			matrix.M[ 1 ][ 1 ] = 0.0f;
+			matrix.M[ 1 ][ 2 ] = 1.0f;
+			matrix.M[ 1 ][ 3 ] = 0.0f;
+
+			matrix.M[ 2 ][ 0 ] = 1.0f;
+			matrix.M[ 2 ][ 1 ] = 0.0f;
+			matrix.M[ 2 ][ 2 ] = 0.0f;
+			matrix.M[ 2 ][ 3 ] = 0.0f;
+
+			matrix.M[ 3 ][ 0 ] = 0.0f;
+			matrix.M[ 3 ][ 1 ] = 0.0f;
+			matrix.M[ 3 ][ 2 ] = 0.0f;
+			matrix.M[ 3 ][ 3 ] = 1.0f;
+		}
+		else
+		{
+			matrix.M[ 0 ][ 0 ] = 1.0f;
+			matrix.M[ 0 ][ 1 ] = 0.0f;
+			matrix.M[ 0 ][ 2 ] = 0.0f;
+			matrix.M[ 0 ][ 3 ] = 0.0f;
+
+			matrix.M[ 1 ][ 0 ] = 0.0f;
+			matrix.M[ 1 ][ 1 ] = 0.0f;
+			matrix.M[ 1 ][ 2 ] = 1.0f;
+			matrix.M[ 1 ][ 3 ] = 0.0f;
+
+			matrix.M[ 2 ][ 0 ] = 0.0f;
+			matrix.M[ 2 ][ 1 ] =-1.0f;
+			matrix.M[ 2 ][ 2 ] = 0.0f;
+			matrix.M[ 2 ][ 3 ] = 0.0f;
+
+			matrix.M[ 3 ][ 0 ] = 0.0f;
+			matrix.M[ 3 ][ 1 ] = 0.0f;
+			matrix.M[ 3 ][ 2 ] = 0.0f;
+			matrix.M[ 3 ][ 3 ] = 1.0f;
+		}
+
+		return matrix;
+	}
 
 };
 
@@ -417,11 +482,13 @@ public:
 protected:
 	FMaxLiveLink*	livelinkReference_;
 
+	static const int ParentIndex_None = -1;
 	struct NodeReference
 	{
 		NodeReference()
 			: ReferencedNode( nullptr )
 			, ShouldUpdateGeometry( false )
+			, ParentIndexCache( ParentIndex_None )
 		{}
 		NodeReference(
 			INode*		node,
@@ -429,10 +496,12 @@ protected:
 		)
 			: ReferencedNode( node )
 			, ShouldUpdateGeometry( shouldUpdateGeometry )
+			, ParentIndexCache( ParentIndex_None )
 		{}
 
 		INode*		ReferencedNode;
 		bool		ShouldUpdateGeometry;
+		int			ParentIndexCache;
 	};
 
 
@@ -485,24 +554,57 @@ public:
 
 	static FTransform	GetSubjectTransformFromSeconds(
 		INode* node,
-		double streamTime 
+		double streamTime,
+		bool frontAxisX, bool forRootNode
 	)
 	{
 		return GetSubjectTransform(
 			node,
-			SecToTicks( streamTime )
+			SecToTicks( streamTime ),
+			frontAxisX, forRootNode
 		);
 	}
 	static FTransform	GetSubjectTransform(
 		INode* node,
-		TimeValue timeValue 
+		TimeValue timeValue,
+		bool frontAxisX, bool forRootNode
 	)
 	{
 		auto nodeName = node->GetName();
 
+
+		Matrix3 tt(
+			Point3( 0.0f, 1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+
+		Matrix3 vm(
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 0.0f,-1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+
+		vm.Invert();
+
+		Matrix3 jm(
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+
+
 		Matrix3 parentMtx;
 		auto transformMatrix = node->GetNodeTM( timeValue, nullptr );
 
+		if( frontAxisX )
+		{
+			transformMatrix = ( transformMatrix * vm ) * tt;
+			transformMatrix = jm * transformMatrix;
+		}
 
 		Interface14* interFace = GetCOREInterface14();
 
@@ -548,13 +650,20 @@ public:
 			isRootNode = true;
 		}
 
+		
+
 		if( !isRootNode )
 		{
 			parentMtx = parentNode->GetNodeTM( timeValue );
+
+			if( frontAxisX )
+			{
+				parentMtx = jm * ( ( parentMtx * vm ) * tt );
+			}
+
 			parentMtx.Invert();
 			transformMatrix = transformMatrix * parentMtx;
 		}
-		
 		FQuat	rotateValue			= FQuat::Identity;
 		FVector scaleValue			= FVector::OneVector;
 		FVector translationValue	= FVector::ZeroVector;
@@ -564,6 +673,7 @@ public:
 		auto unitScale = GetMasterScale( GetUSDefaultUnit());
 		AffineParts affine;
 		decomp_affine( transformMatrix, &affine );
+
 
 		auto tmController = node->GetTMController();
 		if( tmController && 0 )
@@ -689,9 +799,6 @@ public:
 				}
 			}
 		}
-
-		
-
 		{
 			{
 				rotateValue.X	= affine.q.x;
@@ -711,11 +818,39 @@ public:
 			}
 		}
 
-		return FTransform(
-			rotateValue,
-			translationValue,
-			scaleValue
-		);
+		auto ret =
+			FTransform(
+				rotateValue,
+				translationValue,
+				scaleValue
+			);
+
+		if( frontAxisX && forRootNode )
+		{
+			auto q = FQuat::MakeFromEuler( FVector( 90.0f, 90.0f, 0 ) );
+			//ret *= q;
+			/*
+			Matrix3 invM(
+				Point3( 1.0f, 0.0f, 0.0f ),
+				Point3( 0.0f, 0.0f, 1.0f ),
+				Point3( 0.0f, -1.0f, 0.0f ),
+				Point3( 0.0f, 0.0f, 0.0f )
+			);
+
+			invM.Invert();
+			transformMatrix *= invM;
+
+			Matrix3 m(
+				Point3( 0.0f, 1.0f, 0.0f ),
+				Point3( 0.0f, 0.0f, 1.0f ),
+				Point3( 1.0f, 0.0f, 0.0f ),
+				Point3( 0.0f, 0.0f, 0.0f )
+			);
+
+			transformMatrix *= m;
+			*/
+		}
+		return ret;
 	}
 
 	virtual void OnStream( double streamTime, int32 frameNumber ) = 0;
@@ -804,7 +939,7 @@ public:
 
 		TArray<FTransform> transformList =
 		{
-			this->GetSubjectTransformFromSeconds( this->nodeList_[0].ReferencedNode, streamTime )
+			this->GetSubjectTransformFromSeconds( this->nodeList_[0].ReferencedNode, streamTime, false, true )
 		};
 		TArray<FLiveLinkCurveElement> curves;
 
@@ -1093,17 +1228,17 @@ public:
 				auto node = this->nodeList_[ iNode ].ReferencedNode;
 				const auto nodeName = node->GetName();
 
-				int parentIndex = -1;
+				this->nodeList_[ iNode ].ParentIndexCache = ParentIndex_None;
 				for( int jNode = 0; jNode < this->nodeList_.Num(); ++jNode )
 				{
 					if( node->GetParentNode() == this->nodeList_[ jNode ].ReferencedNode )
 					{
-						parentIndex = jNode;
+						this->nodeList_[ iNode ].ParentIndexCache = jNode;
 						break;
 					}
 				}
 				jointNames.Add( node->GetName() );
-				jointParents.Add( parentIndex );
+				jointParents.Add( this->nodeList_[ iNode ].ParentIndexCache );
 			}
 		}
 
@@ -1130,6 +1265,13 @@ public:
 			}
 		}
 	}
+	void	PrepareToUpdateGeometry()
+	{
+		for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
+		{
+			this->nodeList_[ iNode ].ShouldUpdateGeometry = true;
+		}
+	}
 
 	virtual void OnStream( double streamTime, int32 frameNumber )
 	{
@@ -1143,12 +1285,22 @@ public:
 
 		FDateTime currentTime = FDateTime::Now();
 
+
+		FMatrix matrix = this->livelinkReference_->GetPointConvertMatrix();
+		
+
+		//JointOrientationMatrix.SetR( FbxVector4( -90.0, -90.0, 0.0 ) );
+
 		if( OnlyJoint() )
 		{
 			for( int iJoint = 0; iJoint < this->jointNodeList_.Num(); ++iJoint )
 			{
 				auto joint = this->jointNodeList_[ iJoint ];
-				auto transform = this->GetSubjectTransformFromSeconds( joint, streamTime );
+				auto transform = 
+					this->GetSubjectTransformFromSeconds( 
+						joint, streamTime, 
+						this->livelinkReference_->UseForceFrontAxisX(), false
+					);
 
 				transformList.Add( transform );
 			}
@@ -1160,7 +1312,12 @@ public:
 				auto node = this->nodeList_[ iNode ].ReferencedNode;
 				const auto nodeName = node->GetName();
 
-				auto transform = this->GetSubjectTransformFromSeconds( node, streamTime );
+				auto transform = 
+					this->GetSubjectTransformFromSeconds( 
+						node, streamTime, 
+						this->livelinkReference_->UseForceFrontAxisX(),
+						this->nodeList_[ iNode ].ParentIndexCache == ParentIndex_None
+					);
 
 				transformList.Add( transform );
 
@@ -1178,9 +1335,8 @@ public:
 
 				auto material = node->GetMtl();
 
-				
-
-				ISkin* skinObject = nullptr;
+				ISkin*		skinObject	= nullptr;
+				MorphR3*	morphObject	= nullptr;
 				{
 					auto deriverdObj	= reinterpret_cast<IDerivedObject*>( obj );
 					int numModifier = deriverdObj->NumModifiers();
@@ -1194,9 +1350,21 @@ public:
 							if( skin )
 							{
 								skinObject = skin;
+								ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
+								obj = state.obj;
+								break;
+							}
+
+							if(
+								modifier->SuperClassID() == OSM_CLASS_ID &&
+								modifier->ClassID() == MORPHER_CLASS_ID
+								)
+							{
+								morphObject = static_cast<MorphR3*>( modifier );
 
 								ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
 								obj = state.obj;
+
 								break;
 							}
 						}
@@ -1233,9 +1401,13 @@ public:
 				{
 					polyObject = ( PolyObject* )obj;
 				}
+				else if( obj->CanConvertToType( Class_ID( TRIOBJ_CLASS_ID, 0 ) ) )
+				{
+					triObject = ( TriObject* )obj;
+				}
 
 
-				
+				bool hasNodeMeshData = false;
 
 				if( triObject )
 				{
@@ -1251,11 +1423,21 @@ public:
 							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
 							{
 								auto vertexPos = triObject->mesh.getVertPtr( iVertex );
-								meshData.PointList.Add(
-									ULiveLinkExtendPoint3(
+
+								auto resultPos = 
+									matrix.TransformFVector4( FVector4(
 										vertexPos->x,
 										vertexPos->y,
 										vertexPos->z
+									) );
+
+								resultPos.Y = -resultPos.Y;
+
+								meshData.PointList.Add(
+									ULiveLinkExtendPoint3(
+										resultPos.X,
+										resultPos.Y,
+										resultPos.Z
 									)
 								);
 							}
@@ -1286,8 +1468,17 @@ public:
 							for( int iNormal = 0; iNormal < numVertexies; ++iNormal )
 							{
 								const auto& normal = normalSpec->Normal( iNormal );
+
+								auto resultVec =
+									matrix.TransformFVector4( FVector4(
+										normal.x,
+										normal.y,
+										normal.z
+									) );
+
+								resultVec.Y = -resultVec.Y;
 								meshData.PointNormalList.Add(
-									ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 
 							}
@@ -1296,13 +1487,17 @@ public:
 						{
 							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
 							{
-								auto normal = polyObject->mm.GetVertexNormal( iVertex );
-								meshData.PointNormalList.Push(
-									ULiveLinkExtendPoint3(
+								auto normal = triObject->mesh.getNormal( iVertex );
+								auto resultVec =
+									matrix.TransformFVector4( FVector4(
 										normal.x,
 										normal.y,
 										normal.z
-									)
+									) );
+
+								resultVec.Y = -resultVec.Y;
+								meshData.PointNormalList.Add(
+									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 							}
 
@@ -1374,8 +1569,16 @@ public:
 									for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 									{
 										const auto& normal = normalSpec->GetNormal( iFace, iTriangle );
+										auto resultVec =
+											matrix.TransformFVector4( FVector4(
+												normal.x,
+												normal.y,
+												normal.z
+											) );
+
+										resultVec.Y = -resultVec.Y;
 										polygon.NormalList.Add(
-											ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+											ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 										);
 									}
 
@@ -1469,7 +1672,7 @@ public:
 							meshData.MaterialGroupList.Push( groupData );
 						}
 
-						hasMeshData = true;
+						hasNodeMeshData = true;
 					}
 				}
 				else if( polyObject )
@@ -1484,11 +1687,20 @@ public:
 						for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
 						{
 							MNVert* vertex = polyObject->mm.V( iVertex );
-							meshData.PointList.Push(
-								ULiveLinkExtendPoint3(
+							auto resultPos =
+								matrix.TransformFVector4( FVector4(
 									vertex->p.x,
 									vertex->p.y,
 									vertex->p.z
+								) );
+
+							resultPos.Y = -resultPos.Y;
+
+							meshData.PointList.Add(
+								ULiveLinkExtendPoint3(
+									resultPos.X,
+									resultPos.Y,
+									resultPos.Z
 								)
 							);
 						}
@@ -1518,10 +1730,17 @@ public:
 							for( int iNormal = 0; iNormal < numVertexies; ++iNormal )
 							{
 								const auto& normal = normalSpec->Normal( iNormal );
-								meshData.PointNormalList.Add( 
-									ULiveLinkExtendPoint3( normal.x, normal.y, normal.z ) 
+								auto resultVec =
+									matrix.TransformFVector4( FVector4(
+										normal.x,
+										normal.y,
+										normal.z
+									) );
+
+								resultVec.Y = -resultVec.Y;
+								meshData.PointNormalList.Add(
+									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
-								
 							}
 						}
 						else if( hasNormalSpec == NotHasNormalSpec )
@@ -1529,12 +1748,16 @@ public:
 							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
 							{
 								auto normal = polyObject->mm.GetVertexNormal( iVertex );
-								meshData.PointNormalList.Push(
-									ULiveLinkExtendPoint3(
+								auto resultVec =
+									matrix.TransformFVector4( FVector4(
 										normal.x,
 										normal.y,
 										normal.z
-									)
+									) );
+
+								resultVec.Y = -resultVec.Y;
+								meshData.PointNormalList.Add(
+									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 							}
 							
@@ -1617,8 +1840,16 @@ public:
 										for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 										{
 											const auto& normal = normalSpec->GetNormal( iFace, triangleList[ iTriangle ] );
+											auto resultVec =
+												matrix.TransformFVector4( FVector4(
+													normal.x,
+													normal.y,
+													normal.z
+												) );
+
+											resultVec.Y = -resultVec.Y;
 											polygon.NormalList.Add(
-												ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+												ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 											);
 										}
 										
@@ -1719,11 +1950,36 @@ public:
 							}
 							meshData.MaterialGroupList.Push( groupData );
 						}
-						hasMeshData = true;
+						hasNodeMeshData = true;
+					}
+				}
+				else if( morphObject )
+				{
+					if( morphObject->chanBank.size() > 0 )
+					{
+						for( const auto& channel : morphObject->chanBank )
+						{
+
+							auto name = channel.mName;
+							auto numPoints	= channel.mPoints.size();
+							auto numDeltas	= channel.mDeltas.size();
+							auto numWeights	= channel.mWeights.size();
+
+							if( numPoints > 0 )
+							{
+								auto point = channel.mPoints[ 0 ];
+								auto delta = channel.mPoints[ 0 ];
+								int a = 0;
+
+
+								
+
+							}
+						}
 					}
 				}
 
-				if( hasMeshData )
+				if( hasNodeMeshData )
 				{
 					if( skinObject )
 					{
@@ -1763,6 +2019,7 @@ public:
 					}
 
 					syncMeshData.MeshList.Add( meshData );
+					hasMeshData = true;
 				}
 				
 			}
@@ -1833,6 +2090,8 @@ FMaxLiveLink::FMaxLiveLink(
 	, buttonRemoveSubject_( nullptr )
 	, textSubjectName_( nullptr )
 	, listSubject_( NULL )
+	, useForceFrontX_Cache_( false )
+	, useSendMeshAutomatically_Cache_( false )
 {
 }
 
@@ -1981,6 +2240,27 @@ void	FMaxLiveLink::CollectSubjects_Recursive(
 				}
 			}
 		}
+		
+		if( CollectOptionBits_MorphMesh & collectOption )
+		{
+			int numModifier = derivedObject->NumModifiers();
+			for( int iModifier = 0; iModifier < numModifier; ++iModifier )
+			{
+				auto modifier = derivedObject->GetModifier( iModifier );
+				if( modifier )
+				{
+					if(
+						modifier->SuperClassID() == OSM_CLASS_ID &&
+						modifier->ClassID() == MORPHER_CLASS_ID
+					)
+					{
+					
+						isTargetType = true;
+					}
+				}
+			}
+		}
+		
 		if( CollectOptionBits_Mesh & collectOption ) 
 		{
 			if(
@@ -2083,7 +2363,7 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 {
 	this->windowHandle_		= hWnd;
 
-	this->buttonAddSubject_	= GetICustButton( GetDlgItem( hWnd, IDC_BUTTON_ADD_SUBJECT ) );
+	this->buttonAddSubject_	= GetICustButton( GetDlgItem( this->windowHandle_, IDC_BUTTON_ADD_SUBJECT ) );
 	if( this->buttonAddSubject_ )
 	{
 		this->buttonAddSubject_->SetType( CBT_PUSH );
@@ -2092,7 +2372,7 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 		this->buttonAddSubject_->SetText( TEXT( "Add" ) );
 	}
 
-	this->buttonRemoveSubject_	= GetICustButton( GetDlgItem( hWnd, IDC_BUTTON_REMOVE_SUBJECT ) );
+	this->buttonRemoveSubject_	= GetICustButton( GetDlgItem( this->windowHandle_, IDC_BUTTON_REMOVE_SUBJECT ) );
 	if( this->buttonRemoveSubject_ )
 	{
 		this->buttonRemoveSubject_->SetType( CBT_PUSH );
@@ -2101,11 +2381,11 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 		this->buttonRemoveSubject_->SetText( TEXT( "Remove" ) );
 	}
 
-	this->textSubjectName_	= GetICustEdit( GetDlgItem( hWnd, IDC_SUBJECTNAME ) );
-	this->listSubject_		= GetDlgItem( hWnd, IDC_SUBJECT_LIST );
+	this->textSubjectName_	= GetICustEdit( GetDlgItem( this->windowHandle_, IDC_SUBJECTNAME ) );
+	this->listSubject_		= GetDlgItem( this->windowHandle_, IDC_SUBJECT_LIST );
 	//this->listSubject_		= GetDlgItem( hWnd, IDC_SUBJECT_LIST );
 
-	this->buttonAddCameraSubject_	= GetICustButton( GetDlgItem( hWnd, IDC_BUTTON_SUBJECT_CAMERA ) );
+	this->buttonAddCameraSubject_	= GetICustButton( GetDlgItem( this->windowHandle_, IDC_BUTTON_SUBJECT_CAMERA ) );
 	if( this->buttonAddCameraSubject_ )
 	{
 		this->buttonAddCameraSubject_->SetType( CBT_PUSH );
@@ -2113,7 +2393,25 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 		this->buttonAddCameraSubject_->SetButtonDownNotify( TRUE );
 		this->buttonAddCameraSubject_->SetText( TEXT( "Add Camera Subject" ) );
 	}
+	
+	this->buttonSendMesh_	= GetICustButton( GetDlgItem( this->windowHandle_, IDC_BUTTON_SendMeshForce ) );
+	if( this->buttonSendMesh_ )
+	{
+		this->buttonSendMesh_->SetType( CBT_PUSH );
+		this->buttonSendMesh_->SetRightClickNotify( TRUE );
+		this->buttonSendMesh_->SetButtonDownNotify( TRUE );
+		this->buttonSendMesh_->SetText( TEXT( "Send Mesh" ) );
+	}
 
+	CheckDlgButton( 
+		this->windowHandle_, IDC_CHECK_ForceFrontX, 
+		this->useForceFrontX_Cache_ ? BST_CHECKED: BST_UNCHECKED 
+	);
+
+	CheckDlgButton(
+		this->windowHandle_, IDC_CHECK_SendMeshAutomatically,
+		this->useSendMeshAutomatically_Cache_ ? BST_CHECKED: BST_UNCHECKED
+	);
 
 	{
 		SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
@@ -2127,6 +2425,10 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 
 void	FMaxLiveLink::FinalizeDialog()
 {
+	this->useForceFrontX_Cache_				= this->UseForceFrontAxisX();
+	this->useSendMeshAutomatically_Cache_	= this->UseMeshUpdateAutomatically();
+
+
 	if( this->buttonAddCameraSubject_ )
 	{
 		ReleaseICustButton( this->buttonAddCameraSubject_ );
@@ -2151,7 +2453,29 @@ void	FMaxLiveLink::FinalizeDialog()
 		ReleaseICustButton( this->buttonAddSubject_ );
 	}
 	this->buttonAddSubject_ = nullptr;
+	this->windowHandle_ = nullptr;
 }
+
+bool	FMaxLiveLink::UseForceFrontAxisX() const
+{
+	if( !this->windowHandle_ )
+	{
+		return false;
+	}
+	return IsDlgButtonChecked( this->windowHandle_, IDC_CHECK_ForceFrontX ) == TRUE;
+}
+
+bool	FMaxLiveLink::UseMeshUpdateAutomatically() const
+{
+	if( !this->windowHandle_ )
+	{
+		return false;
+	}
+	return IsDlgButtonChecked( this->windowHandle_, IDC_CHECK_SendMeshAutomatically ) == TRUE;
+}
+
+
+
 
 void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
 {
@@ -2159,69 +2483,60 @@ void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
 	{
 	case IDC_BUTTON_ADD_SUBJECT:
 		{
-			switch( HIWORD( wParam ) )
+			if( HIWORD( wParam ) == BN_BUTTONUP )
 			{
-			case BN_BUTTONUP:
-				{
-					this->AddEditedSubject();
-				}break;
-			default:
-				{
-				}break;
+				this->AddEditedSubject();
 			}
 		}break;
 
 	case IDC_BUTTON_REMOVE_SUBJECT:
 		{
-			switch( HIWORD( wParam ) )
+			if( HIWORD( wParam ) == BN_BUTTONUP )
 			{
-			case BN_BUTTONUP:
-				{
-					this->RemoveSelectedSubject();
-				}break;
-			default:
-				{
-				}break;
+				this->RemoveSelectedSubject();
 			}
 		}break;
 
 	case IDC_BUTTON_SUBJECT_CAMERA:
 		{
-			switch( HIWORD( wParam ) )
+			if( HIWORD( wParam ) == BN_BUTTONUP )
 			{
-			case BN_BUTTONUP:
+				for(
+					int iCamera = 0;
+					iCamera < this->cameraSubjectList_.Num();
+					++iCamera
+				)
 				{
-					for(
-						int iCamera = 0;
-						iCamera < this->cameraSubjectList_.Num();
-						++iCamera
-					)
-					{
-						auto camera = this->cameraSubjectList_[ iCamera ];
-						delete camera;
-					}
-					this->cameraSubjectList_.Empty();
+					auto camera = this->cameraSubjectList_[ iCamera ];
+					delete camera;
+				}
+				this->cameraSubjectList_.Empty();
 
-					auto cameraNodeList =
-						this->CollectSubjects(
-							CollectOptionBits_Camera
-						);
-					for( INode* cameraNode : cameraNodeList )
-					{
-						auto stream =
-							new FMaxLiveLinkCameraStreamedSubject(
-								this,
-								cameraNode, cameraNode->GetName()
-							);
-						this->cameraSubjectList_.Add( stream );
-					}
-					this->lastUpdateTime_ = TIME_PosInfinity;
-				}break;
-			default:
+				auto cameraNodeList =
+					this->CollectSubjects(
+						CollectOptionBits_Camera
+					);
+				for( INode* cameraNode : cameraNodeList )
 				{
-				}break;
+					auto stream =
+						new FMaxLiveLinkCameraStreamedSubject(
+							this,
+							cameraNode, cameraNode->GetName()
+						);
+					this->cameraSubjectList_.Add( stream );
+				}
+				this->lastUpdateTime_ = TIME_PosInfinity;
 			}
 		}break;
+
+	case IDC_BUTTON_SendMeshForce:
+		{
+			if( HIWORD( wParam ) == BN_BUTTONUP )
+			{
+				this->ApplyCurrentFrameSubjects( true );
+			}
+		}break;
+
 	default:
 		break;
 	}
@@ -2263,14 +2578,20 @@ void	FMaxLiveLink::AddEditedSubject()
 				this->CollectSubjects(
 					CollectOptionBits_OnlySelected |
 					CollectOptionBits_SkinedMesh |
-					CollectOptionBits_Mesh
+					CollectOptionBits_MorphMesh |
+					CollectOptionBits_Mesh |
+					CollectOptionBits_Helper |
+					CollectOptionBits_Dummy
 				);
 			if( selectedNodeList.Num() == 0 )
 			{
 				skinNodeList =
 					this->CollectSubjects(
 						CollectOptionBits_SkinedMesh |
-						CollectOptionBits_Mesh
+						CollectOptionBits_MorphMesh |
+						CollectOptionBits_Mesh |
+						CollectOptionBits_Helper |
+						CollectOptionBits_Dummy
 					);
 			}
 			else
@@ -2353,6 +2674,7 @@ void	FMaxLiveLink::ReceiveChangeGeometoryNodes( const TArray<INode*>& nodes )
 }
 
 
+
 TimeValue	FMaxLiveLink::GetBindPoseTime() const
 {
 	auto range = this->interface_->GetAnimRange();
@@ -2415,6 +2737,24 @@ void	FMaxLiveLink::OnDisplay( TimeValue t, ViewExp* vpt, int flags )
 		if( this->editViewCameraSubject_ )
 		{
 			this->editViewCameraSubject_->OnStreamCamera( frameSeconds, frame, vp13, flags );
+		}
+	}
+}
+
+
+void	FMaxLiveLink::ApplyCurrentFrameSubjects( bool forceUpdateMesh )
+{
+	this->lastUpdateTime_ = this->interface_->GetTime();
+
+
+	double	frameSeconds	= TicksToSec( this->lastUpdateTime_ );
+	int		frame			= this->lastUpdateTime_ / GetTicksPerFrame();
+
+	{
+		for( auto stream : this->skinNodeSubjectList_ )
+		{
+			stream.Value->PrepareToUpdateGeometry();
+			stream.Value->OnStream( frameSeconds, frame );
 		}
 	}
 }

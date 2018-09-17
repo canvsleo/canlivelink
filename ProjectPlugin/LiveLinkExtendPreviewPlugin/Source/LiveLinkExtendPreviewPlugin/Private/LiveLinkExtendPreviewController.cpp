@@ -89,28 +89,6 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 						int numVertexies	= lodModel.NumVertices;
 
-						FMatrix matrix;
-						matrix.M[ 0 ][ 0 ] = 1.0f;
-						matrix.M[ 0 ][ 1 ] = 0.0f;
-						matrix.M[ 0 ][ 2 ] = 0.0f;
-						matrix.M[ 0 ][ 3 ] = 0.0f;
-
-						matrix.M[ 1 ][ 0 ] = 0.0f;
-						matrix.M[ 1 ][ 1 ] = 0.0f;
-						matrix.M[ 1 ][ 2 ] = 1.0f;
-						matrix.M[ 1 ][ 3 ] = 0.0f;
-
-						matrix.M[ 2 ][ 0 ] = 0.0f;
-						matrix.M[ 2 ][ 1 ] =-1.0f;
-						matrix.M[ 2 ][ 2 ] = 0.0f;
-						matrix.M[ 2 ][ 3 ] = 0.0f;
-
-						matrix.M[ 3 ][ 0 ] = 0.0f;
-						matrix.M[ 3 ][ 1 ] = 0.0f;
-						matrix.M[ 3 ][ 2 ] = 0.0f;
-						matrix.M[ 3 ][ 3 ] = 1.0f;
-
-
 						auto meshList = meshSyncData->GetArrayField( "MeshList" );
 
 						for( int32 iSection = 0; iSection < numSections; ++iSection )
@@ -164,6 +142,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 										UMorphTarget* morphTarget = FindObject<UMorphTarget>( skeltalMesh, *meshName );
 										if( morphTarget )
 										{
+											//FMorphTargetDelta
 											//! TODO : Not Implemented.
 										}
 										
@@ -194,16 +173,13 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														auto pointObj = point->AsObject();
 														if( pointObj.IsValid() )
 														{
-															auto vec = 
-																FVector4( 
+															lodPoints.Add(
+																FVector(
 																	pointObj->GetNumberField( "X" ),
 																	pointObj->GetNumberField( "Y" ),
 																	pointObj->GetNumberField( "Z" )
-																);
-
-															auto resultVec	= matrix.TransformFVector4( vec );
-															resultVec.Y		= -resultVec.Y;
-															lodPoints.Add( resultVec );
+																)
+															);
 														}
 													}
 
@@ -405,16 +381,12 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 																		auto normalObj = normalList[ iFace + iTriangle ]->AsObject();
 																		if( normalObj.IsValid() )
 																		{
-																			auto vec =
-																				FVector4(
+																			face.TangentZ[ iTriangle ] = 
+																				FVector(
 																					normalObj->GetNumberField( "X" ),
 																					normalObj->GetNumberField( "Y" ),
 																					normalObj->GetNumberField( "Z" )
 																				);
-
-																			auto resultVec	= matrix.TransformFVector4( vec );
-																			resultVec.Y		= -resultVec.Y;
-																			face.TangentZ[ iTriangle ] = resultVec;
 																		}
 																	}
 																	else if( pointNormalList.Num() > 0 && vertexIndex < pointNormalList.Num() )
@@ -422,16 +394,12 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 																		auto normalObj = pointNormalList[ vertexIndex ]->AsObject();
 																		if( normalObj.IsValid() )
 																		{
-																			auto vec =
-																				FVector4(
+																			face.TangentZ[ iTriangle ] = 
+																				FVector(
 																					normalObj->GetNumberField( "X" ),
 																					normalObj->GetNumberField( "Y" ),
 																					normalObj->GetNumberField( "Z" )
 																				);
-
-																			auto resultVec	= matrix.TransformFVector4( vec );
-																			resultVec.Y		= -resultVec.Y;
-																			face.TangentZ[ iTriangle ] = resultVec;
 																		}
 																	}
 																}
