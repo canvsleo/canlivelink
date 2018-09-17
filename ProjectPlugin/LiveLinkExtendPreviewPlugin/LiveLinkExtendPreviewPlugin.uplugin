@@ -1,0 +1,25 @@
+{
+	"FileVersion" : 3,
+	"Version" : 1,
+	"VersionName" : "0.1",
+	"FriendlyName" : "LiveLink Extend Preview Plugin",
+	"Description" : "Live link extend preview.",
+	"Category" : "Animation",
+	"CreatedBy" : "Tsutomu Wada.",
+	"CreatedByURL" : "https://github.com/tsutomu-wada",
+	"DocsURL" : "",
+	"MarketplaceURL" : "",
+	"SupportURL" : "",
+	"EnabledByDefault" : false,
+	"CanContainContent" : false,
+	"IsBetaVersion" : false,
+	"Installed" : false,
+	"Modules" :
+	[
+		{
+			"Name" : "LiveLinkExtendPreviewPlugin",
+			"Type" : "Developer",
+			"LoadingPhase" : "Default"
+		}
+	]
+}

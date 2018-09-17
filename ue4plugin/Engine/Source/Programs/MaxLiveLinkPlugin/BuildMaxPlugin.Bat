@@ -1,4 +1,3 @@
-
 @echo off
 
 RMDIR %~dp0Staging /S /Q

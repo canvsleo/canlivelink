@@ -10,37 +10,6 @@ public abstract class MaxLiveLinkPluginTargetBase : TargetRules
 		Type = TargetType.Program;
         LinkType = TargetLinkType.Monolithic;
 
-        //OverrideExecutableFileExtension = ".dlu";
-        /*
-		
-
-		bCompileLeanAndMeanUE		= true;
-		//bUseMallocProfiler			= false;
-
-		bBuildEditor				= false;
-        //bBuildWithEditorOnlyData	= false;
-
-        bUsesSlate					= false;
-
-        bCompileAgainstEngine		= true;
-		bCompileAgainstCoreUObject	= true;
-
-        bBuildWithEditorOnlyData	= false;
-
-        bCompilePhysX				= false;
-        bCompileAPEX				= false;
-        bCompileNvCloth				= false;
-        bCompileCEF3				= false;
-        bCompileICU					= false;
-        bHasExports					= false;
-
-        bBuildRequiresCookedData = false;
-
-        bCompileForSize				= true;
-
-        //bBuildInSolutionByDefault	= false;
-		*/
-
         bCompileLeanAndMeanUE = true;
 
         bBuildEditor = false;
@@ -53,8 +22,6 @@ public abstract class MaxLiveLinkPluginTargetBase : TargetRules
         bIncludeADO = true;
 
 		bCompileICU = false;
-
-        //bBuildAdditionalConsoleApplication = false;
 
         bShouldCompileAsDLL = true;
         string OutputName = "MaxLiveLinkPlugin2016";

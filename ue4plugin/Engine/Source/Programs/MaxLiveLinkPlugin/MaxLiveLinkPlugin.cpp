@@ -21,7 +21,11 @@
 
 #include "resource.h"
 
+#include "notify.h"
+
 #include "Windows/WindowsSystemIncludes.h"
+
+#include "ILiveLinkExtendVertexMeshData.h"
 
 DEFINE_LOG_CATEGORY_STATIC( LogBlankMaxPlugin, Log, All);
 
@@ -53,7 +57,9 @@ bool GIsConsoleExecutable;
 #include "decomp.h"
 #include "modstack.h"
 #include "iskin.h"
-
+#include "Tab.h"
+#include "Animatable.h"
+#include "MeshNormalSpec.h"
 
 using NodeArray = TArray<INode*>;
 
@@ -61,6 +67,21 @@ using NodeArray = TArray<INode*>;
 
 
 class FMaxLiveLink;
+
+class NullView 
+	: public View
+{
+public:
+	Point2 ViewToScreen( Point3 p )
+	{
+		return Point2( p.x, p.y );
+	}
+	NullView() {
+		worldToView.IdentityMatrix();
+		screenW=640.0f; screenH = 480.0f;
+	}
+};
+
 
 applyable_class_debug_ok ( NodeEventCallbackValue )
 class NodeEventCallbackValue 
@@ -82,9 +103,13 @@ private:
 public:
 	virtual void ModelStructured( NodeKeyTab& nodes );
 	virtual void GeometryChanged( NodeKeyTab& nodes );
+	virtual void MappingChanged( NodeKeyTab& nodes );
 	virtual void ExtentionChannelChanged( NodeKeyTab& nodes );
 	virtual void ModelOtherEvent( NodeKeyTab& nodes );
 
+	virtual void NameChanged( NodeKeyTab& nodes );
+	virtual void Added( NodeKeyTab& nodes );
+	virtual void Deleted( NodeKeyTab& nodes );
 
 	virtual void Display( TimeValue t, ViewExp *vpt, int flags );
 	virtual void GetViewportRect( TimeValue t, ViewExp* vpt, Rect* rect );
@@ -192,13 +217,24 @@ private:
 
 
 	TMap< FString, FMaxLiveLinkJointStreamedSubject* >	skinNodeSubjectList_;
-	TArray<FMaxLiveLinkCameraStreamedSubject*>	cameraSubjectList_;
+	TArray<FMaxLiveLinkCameraStreamedSubject*>			cameraSubjectList_;
 
 public:
 	void	InitializeDialog( HWND hWnd );
 	void	FinalizeDialog();
 
 	void	OnReceiveDialogCallbackCommand( WPARAM wParam );
+	void	OnReceiveEnterEditCallbackCommand( WPARAM wParam );
+
+	void	AddEditedSubject();
+	void	RemoveSelectedSubject();
+
+	void	DeleteAllSkinNodeSubject();
+
+	void	ReceiveChangeGeometoryNodes( const TArray<INode*>& nodes );
+
+
+	TimeValue	GetBindPoseTime() const;
 
 private:
 	TimeValue	lastUpdateTime_;
@@ -227,10 +263,32 @@ NodeEventCallbackValue::NodeEventCallbackValue(
 	this->interface_->RegisterViewportDisplayCallback( TRUE, this );
 }
 
+/*
+
+//Declare the callback function  
+static void NodeDeleteNotify( void *param, NotifyInfo *info )
+{
+	// Get the nodes being deleted
+	Tab<INode *> *tNode = ( Tab<INode*> )( info->callParam );
+
+	// Do custom processing
+	...
+}
+
+// Register the callback
+RegisterNotification( NodeDeleteNotify, this, NOTIFY_SCENE_PRE_DELETED_NODE );
+
+...
+
+// When done, unregister the callback
+UnRegisterNotification( NodeDeleteNotify, this, NOTIFY_SCENE_PRE_DELETED_NODE );
+
+*/
 NodeEventCallbackValue::~NodeEventCallbackValue()
 {
 	this->interface_->UnRegisterViewportDisplayCallback( TRUE, this );
 	GetISceneEventManager()->UnRegisterCallback( this->nodeEventKey_ );
+
 }
 
 
@@ -244,6 +302,28 @@ void	NodeEventCallbackValue::GeometryChanged( NodeKeyTab& nodes )
 	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "GeometryChanged" ) );
 	printf( "GeometryChanged" );
 }
+void	NodeEventCallbackValue::MappingChanged( NodeKeyTab& nodes )
+{
+	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "MappingChanged" ) );
+	printf( "MappingChanged" );
+	
+	TArray<INode*> nodeList;
+	for( int iNode = 0; iNode < nodes.Count(); ++iNode )
+	{
+		INode* node = NodeEventNamespace::GetNodeByKey( nodes[ iNode ] );
+		if( node ) 
+		{
+			if( node->Selected() )
+			{
+				nodeList.Add( node ); 
+			}
+		}
+	}
+	if( nodeList.Num() > 0 )
+	{
+		this->maxLink_->ReceiveChangeGeometoryNodes( nodeList );
+	}
+}
 
 void	NodeEventCallbackValue::ExtentionChannelChanged( NodeKeyTab& nodes )
 {
@@ -256,6 +336,25 @@ void	NodeEventCallbackValue::ModelOtherEvent( NodeKeyTab& nodes )
 	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "ModelOtherEvent" ) );
 	printf( "ModelOtherEvent" );
 	this->maxLink_->ModelOtherEvent();
+}
+
+void	NodeEventCallbackValue::NameChanged( NodeKeyTab& nodes )
+{
+	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "NameChanged" ) );
+	printf( "NameChanged" );
+	this->maxLink_->DeleteAllSkinNodeSubject();
+}
+void	NodeEventCallbackValue::Added( NodeKeyTab& nodes )
+{
+	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "Added" ) );
+	printf( "Added" );
+	this->maxLink_->DeleteAllSkinNodeSubject();
+}
+void	NodeEventCallbackValue::Deleted( NodeKeyTab& nodes )
+{
+	UE_LOG( LogBlankMaxPlugin, Display, TEXT( "Deleted" ) );
+	printf( "Deleted" );
+	this->maxLink_->DeleteAllSkinNodeSubject();
 }
 
 
@@ -295,9 +394,13 @@ public:
 		const NodeArray& nodeList, const FName& subjectName
 	)
 		: livelinkReference_( livelinkReference )
-		, nodeList_( nodeList )
 		, subjectName_( subjectName )
-	{}
+	{
+		for( auto node : nodeList )
+		{
+			this->nodeList_.Add( node );
+		}
+	}
 
 	FMaxLiveLinkBaseStreamedSubject(
 		FMaxLiveLink* livelinkReference,
@@ -314,8 +417,27 @@ public:
 protected:
 	FMaxLiveLink*	livelinkReference_;
 
-	NodeArray		nodeList_;
-	FName			subjectName_;
+	struct NodeReference
+	{
+		NodeReference()
+			: ReferencedNode( nullptr )
+			, ShouldUpdateGeometry( false )
+		{}
+		NodeReference(
+			INode*		node,
+			bool		shouldUpdateGeometry = true
+		)
+			: ReferencedNode( node )
+			, ShouldUpdateGeometry( shouldUpdateGeometry )
+		{}
+
+		INode*		ReferencedNode;
+		bool		ShouldUpdateGeometry;
+	};
+
+
+	TArray<NodeReference>	nodeList_;
+	FName					subjectName_;
 
 
 	ILiveLinkProvider* GetLiveLinkProvider() const
@@ -324,9 +446,8 @@ protected:
 	}
 
 public:
-	virtual bool ValidateSubject() const = 0;
-	virtual void RebuildSubjectData() = 0;
-
+	virtual bool	ValidateSubject() const = 0;
+	virtual void	RebuildSubjectData() = 0;
 
 	static FTransform	ConvertAffineToTransform( const Matrix3& mtx )
 	{
@@ -683,7 +804,7 @@ public:
 
 		TArray<FTransform> transformList =
 		{
-			this->GetSubjectTransformFromSeconds( this->nodeList_[0], streamTime )
+			this->GetSubjectTransformFromSeconds( this->nodeList_[0].ReferencedNode, streamTime )
 		};
 		TArray<FLiveLinkCurveElement> curves;
 
@@ -695,7 +816,7 @@ public:
 		);
 	}
 
-	void OnStreamCamera( double streamTime, ViewExp* vpt, int flags )
+	void OnStreamCamera( double streamTime, int frame, ViewExp13* vpt, int flags )
 	{
 		auto unit		= GetUSDefaultUnit();
 		auto unitScale	= 1.0 / ( GetMasterScale( unit ) / 10.0 );
@@ -711,6 +832,20 @@ public:
 		auto trans = viewAffine.GetRow( 3 );
 
 		FQuat quat = FQuat::Identity;
+
+		auto viewType	= vpt->GetViewType();
+		auto fov		= vpt->GetFOV();
+		auto zoom		= vpt->GetZoom();
+
+		Point3 screenScale( 1,1,1 );
+		auto screenScaleFactor = vpt->GetScreenScaleFactor( screenScale );
+
+		auto cameraScale = FVector::OneVector;
+
+		FLiveLinkMetaData metaData;
+		metaData.SceneTime.Frames		= frame;
+		metaData.SceneTime.FrameRate	= FLiveLinkFrameRate( (uint32)(1.0f / vpt->GetFPS()), 1 );
+		metaData.SceneTime.Seconds		= (int32)( streamTime );
 
 		auto graphicWindow = vpt->getGW();
 		if( graphicWindow )
@@ -730,8 +865,17 @@ public:
 				&hither, &yon
 			);
 
-			distance = 20.0f;
+			{
+				cameraScale.X = zoom;
+				cameraScale.Y = zoom;
+				cameraScale.Z = zoom;
+			}
 
+			auto fovRad = FMath::RadiansToDegrees( fov );
+
+			metaData.StringMetaData.Add( FName( TEXT("fov") ), FString::SanitizeFloat( fovRad ));
+			
+			/*
 			if( vpt->GetViewCamera() )
 			{
 				invTm = vpt->GetViewCamera()->GetNodeTM( SecToTicks( streamTime ) );
@@ -750,6 +894,7 @@ public:
 
 				}
 			}
+			*/
 
 			Matrix3 rotateMtx;
 			rotateMtx.SetRow( 0, Point3( 0.0, 0.0,-1.0 ) );
@@ -797,9 +942,11 @@ public:
 			FTransform(
 				quat,
 				FVector( -trans.z * unitScale, -trans.x * unitScale, -trans.y * unitScale ),
-				FVector::OneVector
+				cameraScale
 			)
 		};
+
+		
 
 		TArray<FLiveLinkCurveElement> curves;
 
@@ -807,6 +954,7 @@ public:
 			this->subjectName_,
 			transformList,
 			curves,
+			metaData,
 			streamTime
 		);
 	}
@@ -850,7 +998,6 @@ public:
 
 private:
 
-	NodeArray	nodeList_;
 	NodeArray	jointNodeList_;
 
 public:
@@ -864,7 +1011,7 @@ public:
 
 		for( auto node : this->nodeList_ )
 		{
-			auto derivedObject	= reinterpret_cast<IDerivedObject*>( node->GetObjectRef() );
+			auto derivedObject	= reinterpret_cast<IDerivedObject*>( node.ReferencedNode->GetObjectRef() );
 			if( !derivedObject )
 			{
 				continue;
@@ -898,14 +1045,16 @@ public:
 
 	virtual void RebuildSubjectData()
 	{
-		this->nodeList_.Empty();
-		this->jointNodeList_.Empty();
+		
 		
 		TArray<FName>	jointNames;
 		TArray<int32>	jointParents;
 
 		if( OnlyJoint() )
 		{
+			this->nodeList_.Empty();
+			this->jointNodeList_.Empty();
+
 			auto skinList = this->GetSkinList();
 			for( auto skin : skinList )
 			{
@@ -939,20 +1088,15 @@ public:
 		}
 		else
 		{
-			auto nodeList = this->livelinkReference_->CollectSubjects();
-			for( auto node : nodeList )
-			{
-				this->nodeList_.AddUnique( node );
-			}
-
 			for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
 			{
-				auto node = this->nodeList_[ iNode ];
+				auto node = this->nodeList_[ iNode ].ReferencedNode;
+				const auto nodeName = node->GetName();
 
 				int parentIndex = -1;
 				for( int jNode = 0; jNode < this->nodeList_.Num(); ++jNode )
 				{
-					if( node->GetParentNode() == this->nodeList_[ jNode ] )
+					if( node->GetParentNode() == this->nodeList_[ jNode ].ReferencedNode )
 					{
 						parentIndex = jNode;
 						break;
@@ -970,10 +1114,34 @@ public:
 		);
 	}
 
+
+
+	void ReceiveUpdateGeometryOfNodes( const TArray<INode*>& nodes )
+	{
+		for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
+		{
+			for( int iUpdateNodes = 0; iUpdateNodes < nodes.Num(); ++iUpdateNodes )
+			{
+				if( this->nodeList_[ iNode ].ReferencedNode == nodes[ iUpdateNodes ] )
+				{
+					this->nodeList_[ iNode ].ShouldUpdateGeometry = true;
+					break;
+				}
+			}
+		}
+	}
+
 	virtual void OnStream( double streamTime, int32 frameNumber )
 	{
 		TArray<FTransform> transformList;
 		TArray<FLiveLinkCurveElement> curves;
+
+		bool hasMeshData = false;
+
+		FLiveLinkMetaData metaData;
+		ULiveLinkExtendSyncData syncMeshData;
+
+		FDateTime currentTime = FDateTime::Now();
 
 		if( OnlyJoint() )
 		{
@@ -989,20 +1157,632 @@ public:
 		{
 			for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
 			{
-				auto node = this->nodeList_[ iNode ];
+				auto node = this->nodeList_[ iNode ].ReferencedNode;
+				const auto nodeName = node->GetName();
+
 				auto transform = this->GetSubjectTransformFromSeconds( node, streamTime );
 
 				transformList.Add( transform );
+
+				if( !this->nodeList_[ iNode ].ShouldUpdateGeometry )
+				{
+					continue;
+				}
+				this->nodeList_[ iNode ].ShouldUpdateGeometry = false;
+
+				auto obj	= node->GetObjectRef();
+				if( !obj )
+				{ 
+					continue; 
+				}
+
+				auto material = node->GetMtl();
+
+				
+
+				ISkin* skinObject = nullptr;
+				{
+					auto deriverdObj	= reinterpret_cast<IDerivedObject*>( obj );
+					int numModifier = deriverdObj->NumModifiers();
+					for( int iModifier = 0; iModifier < numModifier; ++iModifier )
+					{
+						auto modifier = deriverdObj->GetModifier( iModifier );
+						if( modifier )
+						{
+
+							auto skin = reinterpret_cast<ISkin*>( modifier->GetInterface( I_SKIN ) );
+							if( skin )
+							{
+								skinObject = skin;
+
+								ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
+								obj = state.obj;
+								break;
+							}
+						}
+					}
+				}
+
+
+				ULiveLinkExtendVertexMeshData meshData;
+
+				auto id		= obj->ClassID();
+				auto sid	= obj->SuperClassID();
+
+				TriObject* triObject	= nullptr;
+				PolyObject* polyObject	= nullptr;
+				if( obj->IsSubClassOf( triObjectClassID ) )
+				{
+					triObject = ( TriObject* )obj;
+				}
+				else if( 
+					sid == GEOMOBJECT_CLASS_ID && 
+					( id == EPOLYOBJ_CLASS_ID || id.PartA() == POLYOBJ_CLASS_ID ) 
+				)
+				{
+					polyObject = ( PolyObject* )obj;
+				}
+				else if( 
+					sid == GEOMOBJECT_CLASS_ID && 
+					( id.PartA() == EDITTRIOBJ_CLASS_ID || id.PartA() == TRIOBJ_CLASS_ID ) 
+				)
+				{
+					triObject = ( TriObject* )obj;
+				}
+				else if( obj->CanConvertToType( Class_ID( POLYOBJ_CLASS_ID, 0 ) ) )
+				{
+					polyObject = ( PolyObject* )obj;
+				}
+
+
+				
+
+				if( triObject )
+				{
+					int numVertexies	= triObject->mesh.numVerts;
+					int numFaces		= triObject->mesh.numFaces;
+					if( numVertexies > 0 && numFaces > 0 )
+					{
+						meshData.MeshName	= nodeName;
+						meshData.TimeStamp	= currentTime;
+
+						
+						{
+							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
+							{
+								auto vertexPos = triObject->mesh.getVertPtr( iVertex );
+								meshData.PointList.Add(
+									ULiveLinkExtendPoint3(
+										vertexPos->x,
+										vertexPos->y,
+										vertexPos->z
+									)
+								);
+							}
+						}
+
+						const int NotHasNormalSpec		= 0;
+						const int HasVertexNormalSpec	= 1;
+						const int HasFacesNormalSpec	= 2;
+
+						int hasNormalSpec = NotHasNormalSpec;
+
+						MeshNormalSpec* normalSpec = nullptr;
+						normalSpec = triObject->mesh.GetSpecifiedNormals();
+						if( normalSpec )
+						{
+							if( numVertexies == normalSpec->GetNumNormals() )
+							{
+								hasNormalSpec = HasVertexNormalSpec;
+							}
+							else if( numFaces == normalSpec->GetNumFaces() )
+							{
+								hasNormalSpec = HasFacesNormalSpec;
+							}
+						}
+
+						if( hasNormalSpec == HasVertexNormalSpec )
+						{
+							for( int iNormal = 0; iNormal < numVertexies; ++iNormal )
+							{
+								const auto& normal = normalSpec->Normal( iNormal );
+								meshData.PointNormalList.Add(
+									ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+								);
+
+							}
+						}
+						else if( hasNormalSpec == NotHasNormalSpec )
+						{
+							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
+							{
+								auto normal = polyObject->mm.GetVertexNormal( iVertex );
+								meshData.PointNormalList.Push(
+									ULiveLinkExtendPoint3(
+										normal.x,
+										normal.y,
+										normal.z
+									)
+								);
+							}
+
+						}
+
+
+						int maxTextureCoord = triObject->mesh.getNumMaps();
+						TMap<MtlID, TArray<int> > materialFaceMap;
+						{
+							for( int iFace = 0; iFace < numFaces; ++iFace )
+							{
+								auto materialID		= triObject->mesh.getFaceMtlIndex( iFace );
+								auto findMaterial	= materialFaceMap.Find( materialID );
+								if( findMaterial )
+								{
+									findMaterial->Add( iFace );
+								}
+								else
+								{
+									TArray<int> faceArray;
+									faceArray.Push( iFace );
+									materialFaceMap.Add( materialID , faceArray );
+								}
+							}
+						}
+
+
+						for( const auto& facePair : materialFaceMap )
+						{
+							if( facePair.Key >= material->NumSubMtls() )
+							{
+								continue;
+							}
+
+							auto groupMaterial = material->GetSubMtl( facePair.Key );
+
+							ULiveLinkExtendMaterialGroupMeshData groupData;
+
+							groupData.Triangles		= 0;
+							if( materialFaceMap.Num() == 1 )
+							{
+								groupData.MaterialName	= material->GetName();
+							}
+							else
+							{
+								groupData.MaterialName	= groupMaterial->GetName();
+							}
+
+							const auto& faceList = facePair.Value;
+
+							const int numTriangle = 3;
+							int numFaces = facePair.Value.Num();
+							for( int iFace = 0; iFace < numFaces; ++iFace )
+							{
+								auto faceIndex		= faceList[ iFace ];
+								const auto& face	= triObject->mesh.faces[ faceIndex ];
+
+								ULiveLinkExtendPolygon polygon;
+								polygon.SmoothingGroup = face.smGroup;
+
+								for( int iVertexIndex = 0; iVertexIndex < 3; ++iVertexIndex )
+								{
+									auto vertexIndex = face.v[ iVertexIndex ];
+									polygon.VertexIndexList.Push( vertexIndex );
+								}
+
+								if( hasNormalSpec == HasFacesNormalSpec )
+								{
+									for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+									{
+										const auto& normal = normalSpec->GetNormal( iFace, iTriangle );
+										polygon.NormalList.Add(
+											ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+										);
+									}
+
+								}
+
+								polygon.ColorList0.Init( ULiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
+
+								for( int iMapChannel = -NUM_HIDDENMAPS; iMapChannel < triObject->mesh.numMaps; ++iMapChannel )
+								{
+									auto& mapChannel = triObject->mesh.Map( iMapChannel );
+									if( !mapChannel.GetFlag( MN_DEAD ) && iFace < mapChannel.fnum )
+									{
+										const auto& mapFace = mapChannel.tf[ iFace ];
+										switch( iMapChannel )
+										{
+										case MAP_ALPHA:
+											{
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& color = mapChannel.tv[ vIndex ];
+													polygon.ColorList0[ iTriangle ].W = color.x;
+												}
+											}break;
+										case 0:
+											{
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& color = mapChannel.tv[ vIndex ];
+													polygon.ColorList0[ iTriangle ].X = color.x;
+													polygon.ColorList0[ iTriangle ].Y = color.y;
+													polygon.ColorList0[ iTriangle ].Z = color.z;
+												}
+											}break;
+
+										case 1:
+											{
+												polygon.UVList0.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& uv = mapChannel.tv[ vIndex ];
+													polygon.UVList0[ iTriangle ].X = uv.x;
+													polygon.UVList0[ iTriangle ].Y = uv.y;
+												}
+											}break;
+										case 2:
+											{
+												polygon.UVList1.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& uv = mapChannel.tv[ vIndex ];
+													polygon.UVList1[ iTriangle ].X = uv.x;
+													polygon.UVList1[ iTriangle ].Y = uv.y;
+												}
+											}break;
+										case 3:
+											{
+												polygon.UVList2.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& uv = mapChannel.tv[ vIndex ];
+													polygon.UVList2[ iTriangle ].X = uv.x;
+													polygon.UVList2[ iTriangle ].Y = uv.y;
+												}
+											}break;
+										case 4:
+											{
+												polygon.UVList3.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+												{
+													auto vIndex = mapFace.t[ iTriangle ];
+													const auto& uv = mapChannel.tv[ vIndex ];
+													polygon.UVList3[ iTriangle ].X = uv.x;
+													polygon.UVList3[ iTriangle ].Y = uv.y;
+												}
+											}break;
+
+										default:
+											break;
+
+										}
+									}
+								}
+
+								groupData.PolygonList.Push( polygon );
+							}
+							meshData.MaterialGroupList.Push( groupData );
+						}
+
+						hasMeshData = true;
+					}
+				}
+				else if( polyObject )
+				{
+					meshData.MeshName	= nodeName;
+					meshData.TimeStamp	= currentTime;
+
+					int numVertexies	= polyObject->mm.numv;
+					int numFaces		= polyObject->mm.numf;
+					if( numVertexies > 0 && numFaces > 0 )
+					{
+						for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
+						{
+							MNVert* vertex = polyObject->mm.V( iVertex );
+							meshData.PointList.Push(
+								ULiveLinkExtendPoint3(
+									vertex->p.x,
+									vertex->p.y,
+									vertex->p.z
+								)
+							);
+						}
+
+						const int NotHasNormalSpec		= 0;
+						const int HasVertexNormalSpec	= 1;
+						const int HasFacesNormalSpec	= 2;
+
+						int hasNormalSpec = NotHasNormalSpec;
+
+						MNNormalSpec* normalSpec = nullptr;
+						normalSpec = polyObject->mm.GetSpecifiedNormals();
+						if( normalSpec )
+						{
+							if( numVertexies == normalSpec->GetNumNormals() )
+							{
+								hasNormalSpec = HasVertexNormalSpec;
+							}
+							else if( numFaces == normalSpec->GetNumFaces() )
+							{
+								hasNormalSpec = HasFacesNormalSpec;
+							}
+						}
+
+						if( hasNormalSpec == HasVertexNormalSpec )
+						{
+							for( int iNormal = 0; iNormal < numVertexies; ++iNormal )
+							{
+								const auto& normal = normalSpec->Normal( iNormal );
+								meshData.PointNormalList.Add( 
+									ULiveLinkExtendPoint3( normal.x, normal.y, normal.z ) 
+								);
+								
+							}
+						}
+						else if( hasNormalSpec == NotHasNormalSpec )
+						{
+							for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
+							{
+								auto normal = polyObject->mm.GetVertexNormal( iVertex );
+								meshData.PointNormalList.Push(
+									ULiveLinkExtendPoint3(
+										normal.x,
+										normal.y,
+										normal.z
+									)
+								);
+							}
+							
+						}
+
+					
+						TMap<MtlID, TArray<int> > materialFaceMap;
+						{
+							
+							for( int iFace = 0; iFace < numFaces; ++iFace )
+							{
+								auto face = polyObject->mm.F( iFace );
+								if( face )
+								{
+									auto findMaterial = materialFaceMap.Find( face->material );
+									if( findMaterial )
+									{
+										findMaterial->Add( iFace );
+									}
+									else
+									{
+										TArray<int> faceArray;
+										faceArray.Push( iFace );
+										materialFaceMap.Add( face->material, faceArray );
+									}
+								}
+							}
+						}
+
+						for( const auto& facePair : materialFaceMap )
+						{
+							if( facePair.Key >= material->NumSubMtls() )
+							{
+								continue;
+							}
+
+							auto groupMaterial = material->GetSubMtl( facePair.Key );
+
+							ULiveLinkExtendMaterialGroupMeshData groupData;
+							groupData.Triangles	= 0;
+							if( materialFaceMap.Num() == 1 )
+							{
+								groupData.MaterialName	= material->GetName();
+							}
+							else
+							{
+								groupData.MaterialName	= groupMaterial->GetName();
+							}
+
+							
+
+							int numFace		= polyObject->mm.numf;
+							for( int iFace = 0; iFace < numFace; ++iFace )
+							{
+								auto face = polyObject->mm.F( iFace );
+								if( face )
+								{
+									Tab<int> triangleList;
+
+									if( 0 >= face->TriNum() )
+									{
+										continue;
+									}
+
+									face->GetTriangles( triangleList );
+									ULiveLinkExtendPolygon polygon;
+									polygon.SmoothingGroup = face->smGroup;
+
+									groupData.Triangles += face->TriNum();
+
+									int numTriangle = triangleList.Count();
+									for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+									{
+										int vertexIndex = face->vtx[ triangleList[ iTriangle ] ];
+										polygon.VertexIndexList.Push( vertexIndex );
+									}
+
+									if( hasNormalSpec == HasFacesNormalSpec )
+									{
+										for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+										{
+											const auto& normal = normalSpec->GetNormal( iFace, triangleList[ iTriangle ] );
+											polygon.NormalList.Add(
+												ULiveLinkExtendPoint3( normal.x, normal.y, normal.z )
+											);
+										}
+										
+									}
+
+									polygon.ColorList0.Init( ULiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
+
+									for( int iMapChannel = -NUM_HIDDENMAPS; iMapChannel < polyObject->mm.numm; ++iMapChannel )
+									{
+										const auto mapChannel = polyObject->mm.M( iMapChannel );
+										if( mapChannel )
+										{
+											if( iFace >= mapChannel->numf )
+											{
+												continue;
+											}
+										
+											if( !mapChannel->GetFlag( MN_DEAD ) && iFace < mapChannel->numf )
+											{
+												const auto& mapFace = mapChannel->f[ iFace ];
+												switch( iMapChannel )
+												{
+												case MAP_ALPHA:
+													{
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& color = mapChannel->v[ vIndex ];
+															polygon.ColorList0[ iTriangle ].W = color.x;
+														}
+													}break;
+												case 0:
+													{
+													
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& color = mapChannel->v[ vIndex ];
+															polygon.ColorList0[ iTriangle ].X = color.x;
+															polygon.ColorList0[ iTriangle ].Y = color.y;
+															polygon.ColorList0[ iTriangle ].Z = color.z;
+														}
+													}break;
+												case 1:
+													{
+														polygon.UVList0.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& uv = mapChannel->v[ vIndex ];
+															polygon.UVList0[ iTriangle ].X = uv.x;
+															polygon.UVList0[ iTriangle ].Y = uv.y;
+														}
+													}break;
+												case 2:
+													{
+														polygon.UVList1.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& uv = mapChannel->v[ vIndex ];
+															polygon.UVList1[ iTriangle ].X = uv.x;
+															polygon.UVList1[ iTriangle ].Y = uv.y;
+														}
+													}break;
+												case 3:
+													{
+														polygon.UVList2.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& uv = mapChannel->v[ vIndex ];
+															polygon.UVList2[ iTriangle ].X = uv.x;
+															polygon.UVList2[ iTriangle ].Y = uv.y;
+														}
+													}break;
+												case 4:
+													{
+														polygon.UVList3.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
+														{
+															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
+															const auto& uv = mapChannel->v[ vIndex ];
+															polygon.UVList3[ iTriangle ].X = uv.x;
+															polygon.UVList3[ iTriangle ].Y = uv.y;
+														}
+													}break;
+
+												default:
+													{
+													}break;
+												}
+											}
+										}
+									}
+									groupData.PolygonList.Push( polygon );
+								}
+							}
+							meshData.MaterialGroupList.Push( groupData );
+						}
+						hasMeshData = true;
+					}
+				}
+
+				if( hasMeshData )
+				{
+					if( skinObject )
+					{
+						auto skinContext = skinObject->GetContextInterface( node );
+						if( skinContext )
+						{
+							auto numBones = skinObject->GetNumBones();
+
+							auto numVertex = meshData.PointList.Num();
+							for( int iBone = 0; iBone < numBones; ++iBone )
+							{
+								auto bone = skinObject->GetBone( iBone );
+								meshData.SkinNameList.Add( bone->GetName() );
+							}
+
+							for( int iVertex = 0; iVertex < numVertex; ++iVertex )
+							{
+								int assignedBones = skinContext->GetNumAssignedBones( iVertex );
+								ULiveLinkPointSkin pointSkin;
+
+								for( int iAssignedBone = 0; iAssignedBone < assignedBones; ++iAssignedBone )
+								{
+									auto weight = skinContext->GetBoneWeight( iVertex, iAssignedBone );
+									if( weight < 0.1f )
+									{
+										continue;
+									}
+
+									ULiveLinkSkinLink link;
+									link.SkinWeight	= weight;
+									link.SkinIndex	= skinContext->GetAssignedBone( iVertex, iAssignedBone );
+									pointSkin.SkinList.Add( link );
+								}
+								meshData.PointSkinList.Add( pointSkin );
+							}
+						}
+					}
+
+					syncMeshData.MeshList.Add( meshData );
+				}
+				
 			}
+		}
+
+		if( hasMeshData )
+		{
+			metaData.StringMetaData.Add( TEXT( "mesh_sync_data" ), syncMeshData.ToJson() );
+			metaData.StringMetaData.Add( TEXT( "send_time" ), currentTime.ToIso8601() );
 		}
 
 		this->GetLiveLinkProvider()->UpdateSubjectFrame(
 			this->subjectName_,
 			transformList,
 			curves,
+			metaData,
 			streamTime
 		);
 	}
+
 };
 
 
@@ -1088,6 +1868,10 @@ INT_PTR CALLBACK CustCtrlDlgProc(
 		{
 			u->OnReceiveDialogCallbackCommand( wParam );
 		}break;
+	case WM_CUSTEDIT_ENTER:
+		{
+			u->OnReceiveEnterEditCallbackCommand( wParam );
+		}break;
 	default:
 		return FALSE;
 	}
@@ -1138,24 +1922,14 @@ void	FMaxLiveLink::BeginEditParams( Interface *ip, IUtil *iu )
 			( LPARAM )this 
 		);
 
+
+	
 }
 
 void	FMaxLiveLink::EndEditParams( Interface *ip, IUtil *iu )
 {
 	ip->DeleteRollupPage( this->controlPageHandle_ );
-	if( 0 )
-	{
-		if( this->editViewCameraSubject_ )
-		{
-			delete this->editViewCameraSubject_;
-		}
-		if( this->connectionStatusChangedHandle_.IsValid() )
-		{
-			this->liveLinkProvider_->UnregisterConnStatusChangedHandle( this->connectionStatusChangedHandle_ );
-			this->connectionStatusChangedHandle_.Reset();
-		}
-		this->liveLinkProvider_ = nullptr;
-	}
+	this->controlPageHandle_ = nullptr;
 }
 
 void	FMaxLiveLink::Init( HWND hPanel )
@@ -1174,6 +1948,11 @@ void	FMaxLiveLink::CollectSubjects_Recursive(
 	uint32 collectOption
 )
 {
+	auto nodeName = currentNode->GetName();
+
+	auto cID	= currentNode->ClassID();
+	auto scID	= currentNode->SuperClassID();
+
 	auto derivedObject	= reinterpret_cast<IDerivedObject*>( currentNode->GetObjectRef() );
 	if( 
 		derivedObject &&
@@ -1182,7 +1961,8 @@ void	FMaxLiveLink::CollectSubjects_Recursive(
 	)
 	{
 		bool isTargetType = false;
-		auto superClassID = derivedObject->SuperClassID();
+		auto superClassID	= derivedObject->SuperClassID();
+		auto dcID			= derivedObject->ClassID();
 
 		if( CollectOptionBits_SkinedMesh & collectOption )
 		{
@@ -1246,7 +2026,7 @@ void	FMaxLiveLink::CollectSubjects_Recursive(
 
 		if( isTargetType )
 		{
-			outArray.Add( currentNode );
+			outArray.AddUnique( currentNode );
 		}
 	}
 
@@ -1333,6 +2113,16 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 		this->buttonAddCameraSubject_->SetButtonDownNotify( TRUE );
 		this->buttonAddCameraSubject_->SetText( TEXT( "Add Camera Subject" ) );
 	}
+
+
+	{
+		SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
+		for( const auto& skinPair : this->skinNodeSubjectList_ )
+		{
+			auto skinName = *skinPair.Key;
+			SendMessageW( this->listSubject_, LB_ADDSTRING, 0, ( LPARAM )skinName );
+		}
+	}
 }
 
 void	FMaxLiveLink::FinalizeDialog()
@@ -1373,42 +2163,7 @@ void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
 			{
 			case BN_BUTTONUP:
 				{
-					TCHAR subjectName[ 256 ];
-					int sizeOfText = this->textSubjectName_->GetTextLength();
-					if( sizeOfText > 0 )
-					{
-						this->textSubjectName_->GetText( subjectName, 256 );
-
-						auto oldSubject = this->skinNodeSubjectList_.Find( subjectName );
-						if( oldSubject )
-						{
-							this->skinNodeSubjectList_.Remove( subjectName );
-							delete (*oldSubject );
-						}
-
-						auto skinNodeList = 
-							this->CollectSubjects(
-								CollectOptionBits_SkinedMesh
-							);
-						{
-							auto stream =
-								new FMaxLiveLinkJointStreamedSubject(
-									this,
-									skinNodeList, subjectName
-								);
-							this->skinNodeSubjectList_.Add( subjectName, stream );
-						}
-
-						{
-							SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
-							for( const auto& skinPair : this->skinNodeSubjectList_ )
-							{
-								auto skinName = *skinPair.Key;
-								SendMessageW( this->listSubject_, LB_ADDSTRING, 0, ( LPARAM )skinName );
-							}
-						}
-						this->lastUpdateTime_ = TIME_PosInfinity;
-					}
+					this->AddEditedSubject();
 				}break;
 			default:
 				{
@@ -1422,34 +2177,7 @@ void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
 			{
 			case BN_BUTTONUP:
 				{
-					int selectedIndexList[ 256 ];
-					auto numSelected = SendMessageW( this->listSubject_, LB_GETSELCOUNT, 256, ( LPARAM )selectedIndexList );
-					SendMessageW( this->listSubject_, LB_GETSELITEMS, 256, ( LPARAM )selectedIndexList );
-
-				
-					for( int iSelect = 0; iSelect < numSelected; ++iSelect )
-					{
-						TCHAR subjectName[256];
-
-						auto textLen	= SendMessageW( this->listSubject_, LB_GETTEXTLEN, selectedIndexList[ iSelect ], 0 );
-						auto getResult	= SendMessageW( this->listSubject_, LB_GETTEXT, selectedIndexList[iSelect], ( LPARAM )subjectName );
-
-						auto oldSubject = this->skinNodeSubjectList_.Find( subjectName );
-						if( oldSubject )
-						{
-							this->skinNodeSubjectList_.Remove( subjectName );
-							delete ( *oldSubject );
-						}
-					}
-
-					{
-						SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
-						for( const auto& skinPair : this->skinNodeSubjectList_ )
-						{
-							auto skinName = *skinPair.Key;
-							SendMessageW( this->listSubject_, LB_ADDSTRING, 0, ( LPARAM )skinName );
-						}
-					}
+					this->RemoveSelectedSubject();
 				}break;
 			default:
 				{
@@ -1500,6 +2228,137 @@ void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
 }
 
 
+void	FMaxLiveLink::OnReceiveEnterEditCallbackCommand( WPARAM wParam )
+{
+	switch( wParam )
+	{
+	case IDC_SUBJECTNAME:
+		{
+			this->AddEditedSubject();
+		}break;
+	default:
+		break;
+	}
+}
+
+
+void	FMaxLiveLink::AddEditedSubject()
+{
+	TCHAR subjectName[ 256 ];
+	int sizeOfText = this->textSubjectName_->GetTextLength();
+	if( sizeOfText > 0 )
+	{
+		this->textSubjectName_->GetText( subjectName, 256 );
+
+		auto oldSubject = this->skinNodeSubjectList_.Find( subjectName );
+		if( oldSubject )
+		{
+			this->skinNodeSubjectList_.Remove( subjectName );
+			delete ( *oldSubject );
+		}
+
+		NodeArray skinNodeList;
+		{
+			NodeArray selectedNodeList = 
+				this->CollectSubjects(
+					CollectOptionBits_OnlySelected |
+					CollectOptionBits_SkinedMesh |
+					CollectOptionBits_Mesh
+				);
+			if( selectedNodeList.Num() == 0 )
+			{
+				skinNodeList =
+					this->CollectSubjects(
+						CollectOptionBits_SkinedMesh |
+						CollectOptionBits_Mesh
+					);
+			}
+			else
+			{
+				skinNodeList = selectedNodeList;
+			}
+		}
+
+		
+		{
+			auto stream =
+				new FMaxLiveLinkJointStreamedSubject(
+					this,
+					skinNodeList, subjectName
+				);
+			this->skinNodeSubjectList_.Add( subjectName, stream );
+		}
+
+		{
+			SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
+			for( const auto& skinPair : this->skinNodeSubjectList_ )
+			{
+				auto skinName = *skinPair.Key;
+				SendMessageW( this->listSubject_, LB_ADDSTRING, 0, ( LPARAM )skinName );
+			}
+		}
+		this->lastUpdateTime_ = TIME_PosInfinity;
+	}
+}
+
+void	FMaxLiveLink::RemoveSelectedSubject()
+{
+	int selectedIndexList[ 256 ];
+	auto numSelected = SendMessageW( this->listSubject_, LB_GETSELCOUNT, 256, ( LPARAM )selectedIndexList );
+	SendMessageW( this->listSubject_, LB_GETSELITEMS, 256, ( LPARAM )selectedIndexList );
+
+
+	for( int iSelect = 0; iSelect < numSelected; ++iSelect )
+	{
+		TCHAR subjectName[ 256 ];
+
+		auto textLen	= SendMessageW( this->listSubject_, LB_GETTEXTLEN, selectedIndexList[ iSelect ], 0 );
+		auto getResult	= SendMessageW( this->listSubject_, LB_GETTEXT, selectedIndexList[ iSelect ], ( LPARAM )subjectName );
+
+		auto oldSubject = this->skinNodeSubjectList_.Find( subjectName );
+		if( oldSubject )
+		{
+			this->skinNodeSubjectList_.Remove( subjectName );
+			delete ( *oldSubject );
+		}
+	}
+
+	{
+		SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
+		for( const auto& skinPair : this->skinNodeSubjectList_ )
+		{
+			auto skinName = *skinPair.Key;
+			SendMessageW( this->listSubject_, LB_ADDSTRING, 0, ( LPARAM )skinName );
+		}
+	}
+}
+void	FMaxLiveLink::DeleteAllSkinNodeSubject()
+{
+	SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
+
+	for( const auto& subjectpair : this->skinNodeSubjectList_ )
+	{
+		auto subjectObject = subjectpair.Value;
+		delete ( subjectObject );
+	}
+	this->skinNodeSubjectList_.Empty();
+}
+
+void	FMaxLiveLink::ReceiveChangeGeometoryNodes( const TArray<INode*>& nodes )
+{
+	for( const auto& subjectpair : this->skinNodeSubjectList_ )
+	{
+		subjectpair.Value->ReceiveUpdateGeometryOfNodes( nodes );
+	}
+}
+
+
+TimeValue	FMaxLiveLink::GetBindPoseTime() const
+{
+	auto range = this->interface_->GetAnimRange();
+	return range.Start();
+}
+
 
 void	FMaxLiveLink::ModelOtherEvent()
 {
@@ -1543,16 +2402,20 @@ void	FMaxLiveLink::OnDisplay( TimeValue t, ViewExp* vpt, int flags )
 			stream.Value->OnStream( frameSeconds, frame );
 		}
 	}
+	auto vp13 = reinterpret_cast<ViewExp13*>( vpt->Execute( ViewExp::kEXECUTE_GET_VIEWEXP_13 ) );
+	if( vp13 )
 	{
-		for( auto stream : this->cameraSubjectList_ )
 		{
-			stream->OnStreamCamera( frameSeconds, vpt, flags );
+			for( auto stream : this->cameraSubjectList_ )
+			{
+				stream->OnStreamCamera( frameSeconds, frame, vp13, flags );
+			}
 		}
-	}
 
-	if( this->editViewCameraSubject_ )
-	{
-		this->editViewCameraSubject_->OnStreamCamera( frameSeconds, vpt, flags );
+		if( this->editViewCameraSubject_ )
+		{
+			this->editViewCameraSubject_->OnStreamCamera( frameSeconds, frame, vp13, flags );
+		}
 	}
 }
 

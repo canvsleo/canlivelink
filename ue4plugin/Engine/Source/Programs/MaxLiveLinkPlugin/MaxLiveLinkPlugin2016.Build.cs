@@ -13,19 +13,13 @@ public abstract class MaxLiveLinkPluginBase : ModuleRules
         PublicDefinitions.AddRange( new string[] {
             "_UNICODE",
             "MULTI_PROCESSING=0",
-            //"PCL_ONLY_CORE_POINT_TYPES",
-            //"PCL_NO_PRECOMPILE",
-            //"UE_ENGINE_DIRECTORY=\"D:/project/UnrealEngine-release/Engine\""
         } );
 
-
-
-        // For LaunchEngineLoop.cpp include.  You shouldn't need to add anything else to this line.
         PrivateIncludePaths.AddRange( new string[] {
-            "Runtime/Launch/Public", "Runtime/Launch/Private"
+            "Runtime/Launch/Public",
+			"Runtime/Launch/Private"
         });
 
-        // Unreal dependency modules
         PrivateDependencyModuleNames.AddRange(new string[]
         {
             "Core",
@@ -36,32 +30,6 @@ public abstract class MaxLiveLinkPluginBase : ModuleRules
             "LiveLinkInterface",
             "LiveLinkMessageBusFramework",
         });
-        /*
-		PrivateDependencyModuleNames.AddRange( new string[] 
-		{
-			"Core",
-            "CoreUObject",
-            "AudioMixer",
-            "ApplicationCore",
-            "AutomationController",
-            "AutomationWorker",
-            "DerivedDataCache",
-            "SessionServices",
-            "MediaUtils",
-            "HeadMountedDisplay",
-            "MRMesh",
-            "SlateRHIRenderer",
-            "SlateNullRenderer",
-            "MoviePlayer",
-            "TaskGraph",
-            "ProfilerService",
-            "Projects",
-            "UdpMessaging",
-            "LiveLinkInterface",
-            "LiveLinkMessageBusFramework",
-		} );
-		*/
-
 
         {
 			string MaxVersionString = GetMaxVersion();
@@ -73,14 +41,11 @@ public abstract class MaxLiveLinkPluginBase : ModuleRules
 				PublicDefinitions.Add("NT_PLUGIN=1");
                 PublicDefinitions.Add("REQUIRE_IOSTREAM=1");
 
-				//PrivateIncludePaths.Add(Path.Combine(MaxInstallFolder, "include"));
-
-				if (Target.Platform == UnrealTargetPlatform.Win64)  // @todo: Support other platforms?
+				if (Target.Platform == UnrealTargetPlatform.Win64)
 				{
 					PublicLibraryPaths.Add(Path.Combine(MaxInstallFolder, @"lib\x64\Release"));
 					PrivateIncludePaths.Add(Path.Combine(MaxInstallFolder, @"include"));
 
-					// Maya libraries we're depending on
 					PublicAdditionalLibraries.AddRange(new string[]
 						{
 							"shlwapi.lib",
