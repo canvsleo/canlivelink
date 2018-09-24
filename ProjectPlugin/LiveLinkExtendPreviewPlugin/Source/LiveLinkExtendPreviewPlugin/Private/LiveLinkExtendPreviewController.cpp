@@ -30,6 +30,38 @@ const FName EditorMesh_MetaData_MeshSyncData( TEXT( "mesh_sync_data" ) );
 const FName EditorMesh_MetaData_SendTime( TEXT( "send_time" ) );
 
 
+
+struct MorphDeltaPosition
+{
+	MorphDeltaPosition()
+		: VertexIndex( 0 )
+	{}
+
+	MorphDeltaPosition(
+		const FVector&	position,
+		uint32			vertexIndex
+	)
+		: Position		( position )
+		, VertexIndex	( vertexIndex )
+	{}
+
+	FVector		Position;
+	uint32		VertexIndex;
+};
+
+struct MorphData
+{
+
+	MorphData()
+		: MorphTarget( nullptr )
+	{}
+
+	UMorphTarget*					MorphTarget;
+	TArray< MorphDeltaPosition >	DeltaPositionList;
+};
+
+
+
 void	FLiveLinkExtendInstanceProxy::Initialize( UAnimInstance* InAnimInstance )
 {
 	FLiveLinkInstanceProxy::Initialize( InAnimInstance );
@@ -40,6 +72,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 	auto ret = FLiveLinkInstanceProxy::Evaluate( Output );
 
 	ILiveLinkClient* client = this->ClientRef.GetClient();
+	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>( "MeshUtilities" );
 	if( 
 		client &&
 		this->PreviewMeshComponent &&
@@ -72,14 +105,19 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 				)
 				{
 					this->lastReceiveTime_ = semdTimeStamp;
-					//frame->MetaData.StringMetaData.Remove( EditorMesh_MetaData_MeshSyncData );
 
+					if( skeltalMesh->MorphTargets.Num() > 0 )
+					{
+						skeltalMesh->UnregisterAllMorphTarget();
+					}
 
 					TArray<FVector>			lodPoints;
 					TArray<FMeshWedge>		lodWedges;
 					TArray<FMeshFace>		lodFaces;
 					TArray<FVertInfluence>	lodInfluences;
 					TArray<int32>			lodPointToRawMap;
+
+					TMap< FString, MorphData >	morphDataMap;
 
 					if( meshSyncData->HasField( "MeshList" ) )
 					{
@@ -108,7 +146,8 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 									( *meshData )->HasField( "PointSkinList" ) &&
 									( *meshData )->HasField( "PointNormalList" ) &&
 									( *meshData )->HasField( "SkinNameList" ) &&
-									( *meshData )->HasField( "MaterialGroupList" )
+									( *meshData )->HasField( "MaterialGroupList" ) &&
+									( *meshData )->HasField( "MorphList" )
 								)
 								{
 									auto meshName		= ( *meshData )->GetStringField( "MeshName" );
@@ -121,31 +160,43 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 									const auto& skinNameList		= ( *meshData )->GetArrayField( "SkinNameList" );
 
 									const auto& materialGroupList	= ( *meshData )->GetArrayField( "MaterialGroupList" );
+									const auto& morphList			= ( *meshData )->GetArrayField( "MorphList" );
 
 									FDateTime timeStamp;
 									if( FDateTime::ParseIso8601( *timeStampStr, timeStamp ) )
 									{
-										auto lastUpdateTime = this->lastMeshUpdateTimeMap_.Find( meshName );
-										if( lastUpdateTime )
-										{
-											if( *lastUpdateTime >= timeStamp )
-											{
-												//continue;
-											}
-										}
-
 										this->lastMeshUpdateTimeMap_.Emplace( meshName, timeStamp );
 
 										int numPoints = pointArray.Num();
 										int numGroups = materialGroupList.Num();
-
-										UMorphTarget* morphTarget = FindObject<UMorphTarget>( skeltalMesh, *meshName );
-										if( morphTarget )
-										{
-											//FMorphTargetDelta
-											//! TODO : Not Implemented.
-										}
 										
+
+										int currentVertexBase	= lodPoints.Num();
+										int numVertexPoints		= pointArray.Num();
+
+										TArray<FVector> pointList;
+										pointList.Reserve( pointArray.Num() );
+
+										for( const auto& point : pointArray )
+										{
+											auto pointObj = point->AsObject();
+											if( pointObj.IsValid() )
+											{
+												pointList.Add(
+													FVector(
+														pointObj->GetNumberField( "X" ),
+														pointObj->GetNumberField( "Y" ),
+														pointObj->GetNumberField( "Z" )
+													)
+												);
+											}
+										}
+										lodPoints.Append( pointList );
+
+										TArray<uint32>		polygonIndexList;
+										TArray<FVector2D>	faceIndexUVs;
+										TArray<uint32>		faceInSmoothingGroupIndexList;
+
 										for( const auto& materialGroup : materialGroupList )
 										{
 											auto materialGroupObj = materialGroup->AsObject();
@@ -164,25 +215,6 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 												)
 												{
 													const auto& polygonList = materialGroupObj->GetArrayField( "PolygonList" );
-
-													int currentVertexBase	= lodPoints.Num();
-													int numVertexPoints		= pointArray.Num();
-
-													for( const auto& point : pointArray )
-													{
-														auto pointObj = point->AsObject();
-														if( pointObj.IsValid() )
-														{
-															lodPoints.Add(
-																FVector(
-																	pointObj->GetNumberField( "X" ),
-																	pointObj->GetNumberField( "Y" ),
-																	pointObj->GetNumberField( "Z" )
-																)
-															);
-														}
-													}
-
 
 													{
 														const auto& boneList = skeltalMesh->RefSkeleton.GetRawRefBoneInfo();
@@ -316,9 +348,13 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 																FMemory::Memset( &face, 0, sizeof( face ) );
 
+																
+
 																for( int iTriangle = 0; iTriangle < 3; ++iTriangle )
 																{
-																	int vertexIndex = FCString::Atoi( *( vertexIndexList[ iFace + iTriangle ])->AsString() );
+																	auto vertexIndex = FCString::Atoi( *( vertexIndexList[ iFace + iTriangle ])->AsString() );
+
+																	polygonIndexList.Add( vertexIndex );
 
 																	FMeshWedge wedge;
 																	wedge.iVertex	= vertexIndex + currentVertexBase;
@@ -327,10 +363,10 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 																	auto colorObj = colorList0[ iFace + iTriangle ]->AsObject();
 																	if( colorObj.IsValid() )
 																	{
-																		wedge.Color.R = colorObj->GetNumberField( "X" );
-																		wedge.Color.G = colorObj->GetNumberField( "Y" );
-																		wedge.Color.B = colorObj->GetNumberField( "Z" );
-																		wedge.Color.A = colorObj->GetNumberField( "W" );
+																		wedge.Color.R = ( uint8 )( colorObj->GetNumberField( "X" ) * 255.0 );
+																		wedge.Color.G = ( uint8 )( colorObj->GetNumberField( "Y" ) * 255.0 );
+																		wedge.Color.B = ( uint8 )( colorObj->GetNumberField( "Z" ) * 255.0 );
+																		wedge.Color.A = ( uint8 )( colorObj->GetNumberField( "W" ) * 255.0 );
 																	}
 
 																	if( uvList0.Num() > 0 )
@@ -402,7 +438,11 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 																				);
 																		}
 																	}
+
+																	faceIndexUVs.Add( wedge.UVs[ 0 ] );
 																}
+																faceInSmoothingGroupIndexList.Add( smoothingGroup );
+
 
 																face.MeshMaterialIndex = section.MaterialIndex;
 																
@@ -412,6 +452,73 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														}
 													}
 
+
+													auto numMorph = morphList.Num();
+													if( numMorph > 0 )
+													{
+														for( int iMorph = 0; iMorph < numMorph; ++iMorph )
+														{
+															const auto& morphData = morphList[ iMorph ]->AsObject();
+
+															if(
+																morphData.IsValid() &&
+																morphData->HasField( "MorphName" ) &&
+																morphData->HasField( "VertexList" )
+															)
+															{
+																auto vertexList = morphData->GetArrayField( "VertexList" );
+																auto numVertexList = vertexList.Num();
+																if( numVertexList > 0 )
+																{
+																	auto morphName = morphData->GetStringField( "MorphName" );
+
+																	MorphData* morphData = morphDataMap.Find( morphName );
+																	if( !morphData )
+																	{
+																		MorphData newMorphData;
+																		newMorphData.MorphTarget = NewObject<UMorphTarget>( skeltalMesh, FName( *morphName ) );
+																		morphDataMap.Add( morphName, newMorphData );
+																		morphData = morphDataMap.Find( morphName );
+																	}
+
+
+																	for( int iVertex = 0; iVertex < numVertexList; ++iVertex )
+																	{
+																		uint32 vertexIndex = iVertex + currentVertexBase;
+																		auto vertexData = vertexList[ iVertex ]->AsObject();
+																		if(
+																			vertexData.IsValid() &&
+																			vertexData->HasField( "DeltaPoint" )
+																		)
+																		{
+																			auto deltaPoint	= vertexData->GetObjectField( "DeltaPoint" );
+																			if( deltaPoint.IsValid() )
+																			{
+																				morphData->DeltaPositionList.Add(
+																					MorphDeltaPosition(
+																						FVector(
+																							deltaPoint->GetNumberField( "X" ),
+																							deltaPoint->GetNumberField( "Y" ),
+																							deltaPoint->GetNumberField( "Z" )
+																						),
+																						vertexIndex
+																					)
+																				);
+																			}
+																			else
+																			{
+																				morphData->DeltaPositionList.Add( MorphDeltaPosition( FVector::ZeroVector, vertexIndex ) );
+																			}
+																		}
+																		else
+																		{
+																			morphData->DeltaPositionList.Add( MorphDeltaPosition( FVector::ZeroVector, vertexIndex ) );
+																		}
+																	}
+																}
+															}
+														}
+													}
 													findUpdateMesh = true;
 												}
 											}
@@ -484,9 +591,6 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 						lodPointToRawMap[ iPoint ] = iPoint;
 					}
 
-
-					IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>( "MeshUtilities" );
-
 					IMeshUtilities::MeshBuildOptions buildOptions;
 					{
 						buildOptions.bComputeNormals			= false;
@@ -508,6 +612,73 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 						);
 					if( bBuildSuccess )
 					{
+						{
+							auto numMorphTargets = morphDataMap.Num();
+							if( numMorphTargets > 0 )
+							{
+								for( const auto& morphDataPair : morphDataMap )
+								{
+									TArray< FMorphTargetDelta > deltaDataList;
+
+									auto numImportVertex = model->LODModels[ 0 ].MeshToImportVertexMap.Num();
+
+									for( const auto& morphDeltaPoint : morphDataPair.Value.DeltaPositionList )
+									{
+										for( int iImportedVertexIndex = 0; iImportedVertexIndex < numImportVertex; ++iImportedVertexIndex )
+										{
+											if( model->LODModels[ 0 ].MeshToImportVertexMap[ iImportedVertexIndex ] == morphDeltaPoint.VertexIndex )
+											{
+												FMorphTargetDelta delta;
+
+												delta.PositionDelta = morphDeltaPoint.Position;
+												delta.TangentZDelta	= FVector::ZeroVector;
+												delta.SourceIdx		= iImportedVertexIndex;
+
+												deltaDataList.Add( delta );
+											}
+										}
+									}
+
+									/*
+									TArray<FVector> baseNormalList;
+									baseNormalList.Reserve( numVertexList );
+									MeshUtilities.CalculateNormals(
+										morphedPointList, polygonIndexList,
+										faceIndexUVs, faceInSmoothingGroupIndexList,
+										ETangentOptions::BlendOverlappingNormals | ETangentOptions::UseMikkTSpace,
+										baseNormalList
+									);
+
+									TArray<FVector> morphedNormalList;
+									morphedNormalList.Reserve( numVertexList );
+									MeshUtilities.CalculateNormals(
+										morphedPointList, polygonIndexList,
+										faceIndexUVs, faceInSmoothingGroupIndexList,
+										ETangentOptions::BlendOverlappingNormals | ETangentOptions::UseMikkTSpace,
+										morphedNormalList
+									);
+
+									for( int iVertex = 0; iVertex < numVertexList; ++iVertex )
+									{
+										morphTargetDeltas[ iVertex ].TangentZDelta = morphedNormalList[ iVertex ] - baseNormalList[ iVertex ];
+									}
+									*/
+
+									morphDataPair.Value.MorphTarget->PopulateDeltas(
+										deltaDataList,
+										0, model->LODModels[ 0 ].Sections,
+										true
+									);
+									if( morphDataPair.Value.MorphTarget->HasValidData() )
+									{
+										skeltalMesh->RegisterMorphTarget( morphDataPair.Value.MorphTarget );
+									}
+								}
+
+								skeltalMesh->ReleaseResources();
+							}
+						}
+						
 						skeltalMesh->PostEditChange();
 						skeltalMesh->PostLoad();
 					}

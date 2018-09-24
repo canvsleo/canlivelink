@@ -7,6 +7,7 @@
 //#include "UObject/Object.h"
 #include "Misc/ConfigCacheIni.h"
 
+#include "LiveLinkExtendVertexMeshData.h"
 
 #include "Misc/CommandLine.h"
 #include "Async/TaskGraphInterfaces.h"
@@ -25,7 +26,10 @@
 
 #include "Windows/WindowsSystemIncludes.h"
 
-#include "ILiveLinkExtendVertexMeshData.h"
+
+
+#include "Base64.h"
+
 
 DEFINE_LOG_CATEGORY_STATIC( LogBlankMaxPlugin, Log, All);
 
@@ -232,7 +236,7 @@ public:
 	void	FinalizeDialog();
 
 	bool	UseForceFrontAxisX() const;
-	bool	UseMeshUpdateAutomatically() const;
+	bool	UseAutomaticMeshUpdate() const;
 
 	void	OnReceiveDialogCallbackCommand( WPARAM wParam );
 	void	OnReceiveEnterEditCallbackCommand( WPARAM wParam );
@@ -308,6 +312,48 @@ public:
 		return matrix;
 	}
 
+	static const Matrix3& GetFrontXMatrix()
+	{
+		static const Matrix3 frontXMatrix(
+			Point3( 0.0f, 1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+		return frontXMatrix;
+	}
+
+	static const Matrix3& GetInvertFrontZMatrix()
+	{
+		static const Matrix3 invertFrontZMatrix(
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 0.0f, -1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+
+		/*
+		FrontZMatrix(
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 0.0f, -1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+		*/
+
+		return invertFrontZMatrix;
+	}
+
+	static const Matrix3& GetFrontXRootMatrix()
+	{
+		static const Matrix3 frontXRootMatrix(
+			Point3( 0.0f, 0.0f, 1.0f ),
+			Point3( 1.0f, 0.0f, 0.0f ),
+			Point3( 0.0f, 1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f, 0.0f )
+		);
+		return frontXRootMatrix;
+	}
 };
 
 
@@ -573,12 +619,7 @@ public:
 		auto nodeName = node->GetName();
 
 
-		Matrix3 tt(
-			Point3( 0.0f, 1.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 1.0f ),
-			Point3( 1.0f, 0.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 0.0f )
-		);
+		const auto& frontXMatrix = FMaxLiveLink::GetFrontXMatrix();
 
 		Matrix3 vm(
 			Point3( 1.0f, 0.0f, 0.0f ),
@@ -589,12 +630,7 @@ public:
 
 		vm.Invert();
 
-		Matrix3 jm(
-			Point3( 0.0f, 0.0f, 1.0f ),
-			Point3( 1.0f, 0.0f, 0.0f ),
-			Point3( 0.0f, 1.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 0.0f )
-		);
+		const auto& frontXRootMatrix = FMaxLiveLink::GetFrontXRootMatrix();
 
 
 		Matrix3 parentMtx;
@@ -602,8 +638,8 @@ public:
 
 		if( frontAxisX )
 		{
-			transformMatrix = ( transformMatrix * vm ) * tt;
-			transformMatrix = jm * transformMatrix;
+			transformMatrix = ( transformMatrix * vm ) * frontXMatrix;
+			transformMatrix = frontXRootMatrix * transformMatrix;
 		}
 
 		Interface14* interFace = GetCOREInterface14();
@@ -658,7 +694,7 @@ public:
 
 			if( frontAxisX )
 			{
-				parentMtx = jm * ( ( parentMtx * vm ) * tt );
+				parentMtx = frontXRootMatrix * ( ( parentMtx * vm ) * frontXMatrix );
 			}
 
 			parentMtx.Invert();
@@ -678,6 +714,7 @@ public:
 		auto tmController = node->GetTMController();
 		if( tmController && 0 )
 		{
+			// use animation contlloer
 			AffineParts affine2 = affine;
 			{
 				auto scaleController = tmController->GetScaleController();
@@ -817,40 +854,11 @@ public:
 				translationValue.Z		= affine.t.z;
 			}
 		}
-
-		auto ret =
-			FTransform(
-				rotateValue,
-				translationValue,
-				scaleValue
-			);
-
-		if( frontAxisX && forRootNode )
-		{
-			auto q = FQuat::MakeFromEuler( FVector( 90.0f, 90.0f, 0 ) );
-			//ret *= q;
-			/*
-			Matrix3 invM(
-				Point3( 1.0f, 0.0f, 0.0f ),
-				Point3( 0.0f, 0.0f, 1.0f ),
-				Point3( 0.0f, -1.0f, 0.0f ),
-				Point3( 0.0f, 0.0f, 0.0f )
-			);
-
-			invM.Invert();
-			transformMatrix *= invM;
-
-			Matrix3 m(
-				Point3( 0.0f, 1.0f, 0.0f ),
-				Point3( 0.0f, 0.0f, 1.0f ),
-				Point3( 1.0f, 0.0f, 0.0f ),
-				Point3( 0.0f, 0.0f, 0.0f )
-			);
-
-			transformMatrix *= m;
-			*/
-		}
-		return ret;
+		return FTransform(
+			rotateValue,
+			translationValue,
+			scaleValue
+		);
 	}
 
 	virtual void OnStream( double streamTime, int32 frameNumber ) = 0;
@@ -1265,11 +1273,11 @@ public:
 			}
 		}
 	}
-	void	PrepareToUpdateGeometry()
+	void	SettingUpdateGeometry( bool doUpdate )
 	{
 		for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
 		{
-			this->nodeList_[ iNode ].ShouldUpdateGeometry = true;
+			this->nodeList_[ iNode ].ShouldUpdateGeometry = doUpdate;
 		}
 	}
 
@@ -1281,16 +1289,12 @@ public:
 		bool hasMeshData = false;
 
 		FLiveLinkMetaData metaData;
-		ULiveLinkExtendSyncData syncMeshData;
+		FLiveLinkExtendSyncData syncMeshData;
 
 		FDateTime currentTime = FDateTime::Now();
 
 
 		FMatrix matrix = this->livelinkReference_->GetPointConvertMatrix();
-		
-
-		//JointOrientationMatrix.SetR( FbxVector4( -90.0, -90.0, 0.0 ) );
-
 		if( OnlyJoint() )
 		{
 			for( int iJoint = 0; iJoint < this->jointNodeList_.Num(); ++iJoint )
@@ -1372,7 +1376,7 @@ public:
 				}
 
 
-				ULiveLinkExtendVertexMeshData meshData;
+				FLiveLinkExtendVertexMeshData meshData;
 
 				auto id		= obj->ClassID();
 				auto sid	= obj->SuperClassID();
@@ -1434,7 +1438,7 @@ public:
 								resultPos.Y = -resultPos.Y;
 
 								meshData.PointList.Add(
-									ULiveLinkExtendPoint3(
+									FLiveLinkExtendPoint3(
 										resultPos.X,
 										resultPos.Y,
 										resultPos.Z
@@ -1478,7 +1482,7 @@ public:
 
 								resultVec.Y = -resultVec.Y;
 								meshData.PointNormalList.Add(
-									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+									FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 
 							}
@@ -1497,7 +1501,7 @@ public:
 
 								resultVec.Y = -resultVec.Y;
 								meshData.PointNormalList.Add(
-									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+									FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 							}
 
@@ -1534,7 +1538,7 @@ public:
 
 							auto groupMaterial = material->GetSubMtl( facePair.Key );
 
-							ULiveLinkExtendMaterialGroupMeshData groupData;
+							FLiveLinkExtendMaterialGroupMeshData groupData;
 
 							groupData.Triangles		= 0;
 							if( materialFaceMap.Num() == 1 )
@@ -1555,7 +1559,7 @@ public:
 								auto faceIndex		= faceList[ iFace ];
 								const auto& face	= triObject->mesh.faces[ faceIndex ];
 
-								ULiveLinkExtendPolygon polygon;
+								FLiveLinkExtendPolygon polygon;
 								polygon.SmoothingGroup = face.smGroup;
 
 								for( int iVertexIndex = 0; iVertexIndex < 3; ++iVertexIndex )
@@ -1578,13 +1582,13 @@ public:
 
 										resultVec.Y = -resultVec.Y;
 										polygon.NormalList.Add(
-											ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+											FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 										);
 									}
 
 								}
 
-								polygon.ColorList0.Init( ULiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
+								polygon.ColorList0.Init( FLiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
 
 								for( int iMapChannel = -NUM_HIDDENMAPS; iMapChannel < triObject->mesh.numMaps; ++iMapChannel )
 								{
@@ -1617,7 +1621,7 @@ public:
 
 										case 1:
 											{
-												polygon.UVList0.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												polygon.UVList0.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 												{
 													auto vIndex = mapFace.t[ iTriangle ];
@@ -1628,7 +1632,7 @@ public:
 											}break;
 										case 2:
 											{
-												polygon.UVList1.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												polygon.UVList1.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 												{
 													auto vIndex = mapFace.t[ iTriangle ];
@@ -1639,7 +1643,7 @@ public:
 											}break;
 										case 3:
 											{
-												polygon.UVList2.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												polygon.UVList2.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 												{
 													auto vIndex = mapFace.t[ iTriangle ];
@@ -1650,7 +1654,7 @@ public:
 											}break;
 										case 4:
 											{
-												polygon.UVList3.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+												polygon.UVList3.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 												for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 												{
 													auto vIndex = mapFace.t[ iTriangle ];
@@ -1697,7 +1701,7 @@ public:
 							resultPos.Y = -resultPos.Y;
 
 							meshData.PointList.Add(
-								ULiveLinkExtendPoint3(
+								FLiveLinkExtendPoint3(
 									resultPos.X,
 									resultPos.Y,
 									resultPos.Z
@@ -1739,7 +1743,7 @@ public:
 
 								resultVec.Y = -resultVec.Y;
 								meshData.PointNormalList.Add(
-									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+									FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 							}
 						}
@@ -1757,7 +1761,7 @@ public:
 
 								resultVec.Y = -resultVec.Y;
 								meshData.PointNormalList.Add(
-									ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+									FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 								);
 							}
 							
@@ -1796,7 +1800,7 @@ public:
 
 							auto groupMaterial = material->GetSubMtl( facePair.Key );
 
-							ULiveLinkExtendMaterialGroupMeshData groupData;
+							FLiveLinkExtendMaterialGroupMeshData groupData;
 							groupData.Triangles	= 0;
 							if( materialFaceMap.Num() == 1 )
 							{
@@ -1823,7 +1827,7 @@ public:
 									}
 
 									face->GetTriangles( triangleList );
-									ULiveLinkExtendPolygon polygon;
+									FLiveLinkExtendPolygon polygon;
 									polygon.SmoothingGroup = face->smGroup;
 
 									groupData.Triangles += face->TriNum();
@@ -1849,13 +1853,13 @@ public:
 
 											resultVec.Y = -resultVec.Y;
 											polygon.NormalList.Add(
-												ULiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
+												FLiveLinkExtendPoint3( resultVec.X, resultVec.Y, resultVec.Z )
 											);
 										}
 										
 									}
 
-									polygon.ColorList0.Init( ULiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
+									polygon.ColorList0.Init( FLiveLinkExtendPoint4( 1.0f, 1.0f, 1.0f, 1.0f ), numTriangle );
 
 									for( int iMapChannel = -NUM_HIDDENMAPS; iMapChannel < polyObject->mm.numm; ++iMapChannel )
 									{
@@ -1895,7 +1899,7 @@ public:
 													}break;
 												case 1:
 													{
-														polygon.UVList0.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														polygon.UVList0.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 														{
 															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
@@ -1906,7 +1910,7 @@ public:
 													}break;
 												case 2:
 													{
-														polygon.UVList1.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														polygon.UVList1.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 														{
 															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
@@ -1917,7 +1921,7 @@ public:
 													}break;
 												case 3:
 													{
-														polygon.UVList2.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														polygon.UVList2.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 														{
 															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
@@ -1928,7 +1932,7 @@ public:
 													}break;
 												case 4:
 													{
-														polygon.UVList3.Init( ULiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
+														polygon.UVList3.Init( FLiveLinkExtendPoint2( 0.0f, 0.0f ), numTriangle );
 														for( int iTriangle = 0; iTriangle < numTriangle; ++iTriangle )
 														{
 															auto vIndex = mapFace.tv[ triangleList[ iTriangle ] ];
@@ -1953,31 +1957,6 @@ public:
 						hasNodeMeshData = true;
 					}
 				}
-				else if( morphObject )
-				{
-					if( morphObject->chanBank.size() > 0 )
-					{
-						for( const auto& channel : morphObject->chanBank )
-						{
-
-							auto name = channel.mName;
-							auto numPoints	= channel.mPoints.size();
-							auto numDeltas	= channel.mDeltas.size();
-							auto numWeights	= channel.mWeights.size();
-
-							if( numPoints > 0 )
-							{
-								auto point = channel.mPoints[ 0 ];
-								auto delta = channel.mPoints[ 0 ];
-								int a = 0;
-
-
-								
-
-							}
-						}
-					}
-				}
 
 				if( hasNodeMeshData )
 				{
@@ -1998,7 +1977,7 @@ public:
 							for( int iVertex = 0; iVertex < numVertex; ++iVertex )
 							{
 								int assignedBones = skinContext->GetNumAssignedBones( iVertex );
-								ULiveLinkPointSkin pointSkin;
+								FLiveLinkPointSkin pointSkin;
 
 								for( int iAssignedBone = 0; iAssignedBone < assignedBones; ++iAssignedBone )
 								{
@@ -2008,12 +1987,58 @@ public:
 										continue;
 									}
 
-									ULiveLinkSkinLink link;
+									FLiveLinkSkinLink link;
 									link.SkinWeight	= weight;
 									link.SkinIndex	= skinContext->GetAssignedBone( iVertex, iAssignedBone );
 									pointSkin.SkinList.Add( link );
 								}
 								meshData.PointSkinList.Add( pointSkin );
+							}
+						}
+					}
+
+					if( morphObject )
+					{
+						if( morphObject->chanBank.size() > 0 )
+						{
+							for( const auto& channel : morphObject->chanBank )
+							{
+
+								auto name = channel.mName;
+
+								auto numDeltas	= channel.mDeltas.size();
+
+								if( 
+									name &&
+									numDeltas > 0 &&
+									wcslen( name ) > 0
+								)
+								{
+
+									FLiveLinkExtendMeshMorphData morphData;
+									morphData.MorphName = name;
+									for( int iPoint = 0; iPoint < numDeltas; ++iPoint )
+									{
+										FLiveLinkExtendMeshMorphVertexData vertex;
+
+										const auto& point	= channel.mDeltas[ iPoint ];
+										auto resultPos =
+											matrix.TransformFVector4( FVector4(
+												point.x, point.y, point.z
+											) );
+										resultPos.Y = -resultPos.Y;
+
+										resultPos *= channel.mTargetPercent;
+
+										vertex.DeltaPoint =
+											FLiveLinkExtendPoint3(
+												resultPos.X, resultPos.Y, resultPos.Z
+											);
+
+										morphData.VertexList.Add( vertex );
+									}
+									meshData.MorphList.Add( morphData );
+								}
 							}
 						}
 					}
@@ -2027,7 +2052,13 @@ public:
 
 		if( hasMeshData )
 		{
-			metaData.StringMetaData.Add( TEXT( "mesh_sync_data" ), syncMeshData.ToJson() );
+			TArray<uint8> buffer;
+			FMemoryWriter writer( buffer );
+
+			syncMeshData << writer;
+
+			
+			metaData.StringMetaData.Add( TEXT( "mesh_sync_data" ), FBase64::Encode( buffer ) );
 			metaData.StringMetaData.Add( TEXT( "send_time" ), currentTime.ToIso8601() );
 		}
 
@@ -2426,7 +2457,7 @@ void	FMaxLiveLink::InitializeDialog( HWND hWnd )
 void	FMaxLiveLink::FinalizeDialog()
 {
 	this->useForceFrontX_Cache_				= this->UseForceFrontAxisX();
-	this->useSendMeshAutomatically_Cache_	= this->UseMeshUpdateAutomatically();
+	this->useSendMeshAutomatically_Cache_	= this->UseAutomaticMeshUpdate();
 
 
 	if( this->buttonAddCameraSubject_ )
@@ -2465,7 +2496,7 @@ bool	FMaxLiveLink::UseForceFrontAxisX() const
 	return IsDlgButtonChecked( this->windowHandle_, IDC_CHECK_ForceFrontX ) == TRUE;
 }
 
-bool	FMaxLiveLink::UseMeshUpdateAutomatically() const
+bool	FMaxLiveLink::UseAutomaticMeshUpdate() const
 {
 	if( !this->windowHandle_ )
 	{
@@ -2719,6 +2750,15 @@ void	FMaxLiveLink::OnDisplay( TimeValue t, ViewExp* vpt, int flags )
 	int		frame			= t / GetTicksPerFrame();
 
 	{
+
+		if( !this->UseAutomaticMeshUpdate() )
+		{
+			for( auto stream : this->skinNodeSubjectList_ )
+			{
+				stream.Value->SettingUpdateGeometry( false );
+			}
+		}
+
 		for( auto stream : this->skinNodeSubjectList_ )
 		{
 			stream.Value->OnStream( frameSeconds, frame );
@@ -2753,7 +2793,10 @@ void	FMaxLiveLink::ApplyCurrentFrameSubjects( bool forceUpdateMesh )
 	{
 		for( auto stream : this->skinNodeSubjectList_ )
 		{
-			stream.Value->PrepareToUpdateGeometry();
+			if( forceUpdateMesh )
+			{
+				stream.Value->SettingUpdateGeometry( true );
+			}
 			stream.Value->OnStream( frameSeconds, frame );
 		}
 	}
