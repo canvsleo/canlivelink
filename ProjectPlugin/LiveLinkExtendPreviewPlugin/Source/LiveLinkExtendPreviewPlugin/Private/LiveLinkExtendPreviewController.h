@@ -17,7 +17,7 @@
 #include "LiveLinkClientReference.h"
 
 
-#include "ILiveLinkExtendVertexMeshData.h"
+#include "LiveLinkExtendVertexMeshData.h"
 
 #include "LiveLinkExtendPreviewController.generated.h"
 

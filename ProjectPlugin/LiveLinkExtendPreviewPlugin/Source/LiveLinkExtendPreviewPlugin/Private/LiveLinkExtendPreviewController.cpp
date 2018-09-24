@@ -23,6 +23,11 @@
 
 #include "Animation/MorphTarget.h"
 
+#include "LiveLinkExtendVertexMeshData.h"
+
+
+#include "Serialization/MemoryReader.h"
+
 
 const FName EditorCamera ( TEXT( "EditorActiveCamera" ) );
 const FName EditorCameraMetaData_FOV( TEXT( "fov" ) );
@@ -88,21 +93,23 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 			frame
 		)
 		{
-			auto meshSyncJson = frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_MeshSyncData );
+			auto meshSyncBase64 = frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_MeshSyncData );
 			auto sendTime = frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_SendTime );
 			FDateTime semdTimeStamp;
 
+			TArray<uint8> meshSyncBuffer;
+
 			if( 
-				meshSyncJson && 
+				meshSyncBase64 &&
+				FBase64::Decode( *meshSyncBase64, meshSyncBuffer ) &&
 				FDateTime::ParseIso8601( **sendTime, semdTimeStamp )
 			)
 			{
-				TSharedRef<TJsonReader<TCHAR>> JsonReader = TJsonReaderFactory<TCHAR>::Create( *meshSyncJson ); 
-				TSharedPtr<FJsonObject> meshSyncData = MakeShareable( new FJsonObject );
-				if( 
-					this->lastReceiveTime_ < semdTimeStamp &&
-					FJsonSerializer::Deserialize( JsonReader, meshSyncData ) 
-				)
+				FMemoryReader readBuffer( meshSyncBuffer );
+
+				FLiveLinkExtendSyncData syncData;
+				syncData << readBuffer;
+				if( this->lastReceiveTime_ < semdTimeStamp )
 				{
 					this->lastReceiveTime_ = semdTimeStamp;
 
@@ -119,470 +126,336 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 					TMap< FString, MorphData >	morphDataMap;
 
-					if( meshSyncData->HasField( "MeshList" ) )
+					auto& lodModel = model->LODModels[0];
+
+					int numSections = lodModel.Sections.Num();
+					int numVertexies	= lodModel.NumVertices;
+
+					for( int32 iSection = 0; iSection < numSections; ++iSection )
 					{
-						auto& lodModel = model->LODModels[0];
+						FSkelMeshSection& section = lodModel.Sections[ iSection ];
 
-						int numSections = lodModel.Sections.Num();
+						const auto& material = skeltalMesh->Materials[ section.MaterialIndex ];
 
-						int numVertexies	= lodModel.NumVertices;
+						bool findUpdateMesh = false;
 
-						auto meshList = meshSyncData->GetArrayField( "MeshList" );
-
-						for( int32 iSection = 0; iSection < numSections; ++iSection )
+						for( const auto& mesh : syncData.MeshList )
 						{
-							FSkelMeshSection& section = lodModel.Sections[ iSection ];
+							this->lastMeshUpdateTimeMap_.Emplace( mesh.MeshName, mesh.TimeStamp );
 
-							const auto& material = skeltalMesh->Materials[ section.MaterialIndex ];
-
-							bool findUpdateMesh = false;
-
-							for( const auto& mesh : meshList )
-							{
-								const TSharedPtr<FJsonObject>* meshData = nullptr;
-								if( 
-									mesh->TryGetObject( meshData ) &&
-									( *meshData )->HasField( "PointList" ) &&
-									( *meshData )->HasField( "PointSkinList" ) &&
-									( *meshData )->HasField( "PointNormalList" ) &&
-									( *meshData )->HasField( "SkinNameList" ) &&
-									( *meshData )->HasField( "MaterialGroupList" ) &&
-									( *meshData )->HasField( "MorphList" )
-								)
-								{
-									auto meshName		= ( *meshData )->GetStringField( "MeshName" );
-									auto timeStampStr	= ( *meshData )->GetStringField( "TimeStamp" );
-
-									const auto& pointArray			= ( *meshData )->GetArrayField( "PointList" );
-									const auto& pointSkinArray		= ( *meshData )->GetArrayField( "PointSkinList" );
-									const auto& pointNormalList		= ( *meshData )->GetArrayField( "PointNormalList" );
-
-									const auto& skinNameList		= ( *meshData )->GetArrayField( "SkinNameList" );
-
-									const auto& materialGroupList	= ( *meshData )->GetArrayField( "MaterialGroupList" );
-									const auto& morphList			= ( *meshData )->GetArrayField( "MorphList" );
-
-									FDateTime timeStamp;
-									if( FDateTime::ParseIso8601( *timeStampStr, timeStamp ) )
-									{
-										this->lastMeshUpdateTimeMap_.Emplace( meshName, timeStamp );
-
-										int numPoints = pointArray.Num();
-										int numGroups = materialGroupList.Num();
+							int numGroups = mesh.MaterialGroupList.Num();
 										
 
-										int currentVertexBase	= lodPoints.Num();
-										int numVertexPoints		= pointArray.Num();
+							int currentVertexBase	= lodPoints.Num();
+							int numVertexPoints		= mesh.PointList.Num();
 
-										TArray<FVector> pointList;
-										pointList.Reserve( pointArray.Num() );
+							for( const auto& point : mesh.PointList )
+							{
+								lodPoints.Add(
+									FVector(
+										point.X,
+										point.Y,
+										point.Z
+									)
+								);
+							}
 
-										for( const auto& point : pointArray )
+							TArray<uint32>		polygonIndexList;
+							TArray<FVector2D>	faceIndexUVs;
+							TArray<uint32>		faceInSmoothingGroupIndexList;
+
+							for( const auto& materialGroup : mesh.MaterialGroupList )
+							{
+								if( materialGroup.MaterialName == material.MaterialSlotName.ToString() )
+								{
+									{
+										const auto& boneList = skeltalMesh->RefSkeleton.GetRawRefBoneInfo();
+										auto numSkinBondes = mesh.SkinNameList.Num();
+
+										const int InvalidBone = -1;
+										TArray<int> boneMap;
+										boneMap.Init( InvalidBone, numSkinBondes );
+										for( int iLocalBone = 0; iLocalBone < numSkinBondes; ++iLocalBone )
 										{
-											auto pointObj = point->AsObject();
-											if( pointObj.IsValid() )
+											for( int iBone = 0; iBone < boneList.Num(); ++iBone )
 											{
-												pointList.Add(
-													FVector(
-														pointObj->GetNumberField( "X" ),
-														pointObj->GetNumberField( "Y" ),
-														pointObj->GetNumberField( "Z" )
-													)
-												);
+												if( *mesh.SkinNameList[ iLocalBone ] == boneList[ iBone ].Name )
+												{
+													boneMap[ iLocalBone ] = iBone;
+													break;
+												}
 											}
 										}
-										lodPoints.Append( pointList );
 
-										TArray<uint32>		polygonIndexList;
-										TArray<FVector2D>	faceIndexUVs;
-										TArray<uint32>		faceInSmoothingGroupIndexList;
-
-										for( const auto& materialGroup : materialGroupList )
+										auto numSkinPoints = mesh.PointSkinList.Num();
+										if( numSkinPoints == numVertexPoints )
 										{
-											auto materialGroupObj = materialGroup->AsObject();
-											if( 
-												materialGroupObj.IsValid() &&
-												materialGroupObj->HasField( "Triangles" ) &&
-												materialGroupObj->HasField( "MaterialName" )
-											)
+											for( int iSkinPoint = 0; iSkinPoint < numSkinPoints; ++iSkinPoint )
 											{
-												auto triangles		= materialGroupObj->GetIntegerField( "Triangles" );
-												auto materialName	= materialGroupObj->GetStringField( "MaterialName" );
+												auto skinObject = mesh.PointSkinList[ iSkinPoint ];
 
-												if(
-													materialName == material.MaterialSlotName.ToString() &&
-													materialGroupObj->HasField( "PolygonList" )
-												)
+												TArray<FVertInfluence> workInfluence;
+
+												auto totalWeight = 0.0f;
+												for( const auto& skinObj : skinObject.SkinList )
 												{
-													const auto& polygonList = materialGroupObj->GetArrayField( "PolygonList" );
-
+													if( boneMap[ skinObj.SkinIndex ] != InvalidBone )
 													{
-														const auto& boneList = skeltalMesh->RefSkeleton.GetRawRefBoneInfo();
-														auto numSkinBondes = skinNameList.Num();
-
-														const int InvalidBone = -1;
-														TArray<int> boneMap;
-														boneMap.Init( InvalidBone, numSkinBondes );
-														for( int iLocalBone = 0; iLocalBone < numSkinBondes; ++iLocalBone )
+														auto weight = skinObj.SkinWeight;
+														if( weight < 0.1 )
 														{
-															for( int iBone = 0; iBone < boneList.Num(); ++iBone )
-															{
-																if( *skinNameList[ iLocalBone ]->AsString() == boneList[ iBone ].Name )
-																{
-																	boneMap[ iLocalBone ] = iBone;
-																	break;
-																}
-															}
+															continue;
 														}
 
-														auto numSkinPoints = pointSkinArray.Num();
-														if( numSkinPoints == numVertexPoints )
-														{
-															for( int iSkinPoint = 0; iSkinPoint < numSkinPoints; ++iSkinPoint )
-															{
-																auto skinObject = pointSkinArray[ iSkinPoint ]->AsObject();
-																if( skinObject.IsValid() )
-																{
-																	auto skinList = skinObject->GetArrayField( "SkinList" );
-																	auto numSkin = skinList.Num();
+														FVertInfluence influence;
+														influence.BoneIndex = boneMap[ skinObj.SkinIndex ];
+														influence.VertIndex	= currentVertexBase + iSkinPoint;
 
-																	TArray<FVertInfluence> workInfluence;
-
-																	auto totalWeight = 0.0f;
-																	for( int iSkin = 0; iSkin < numSkin; ++iSkin )
-																	{
-																		auto skinObj = skinList[ iSkin ]->AsObject();
-																		if( skinObj.IsValid() )
-																		{
-																			auto localBoneIndex = skinObj->GetIntegerField( "SkinIndex" );
-																			if( boneMap[ localBoneIndex ] != InvalidBone )
-																			{
-																				auto weight = skinObj->GetNumberField( "SkinWeight" );
-																				if( weight < 0.1 )
-																				{
-																					continue;
-																				}
-
-																				FVertInfluence influence;
-																				influence.BoneIndex = boneMap[ localBoneIndex ];
-																				influence.VertIndex	= currentVertexBase + iSkinPoint;
-
-																				influence.Weight	= weight;
-																				totalWeight += influence.Weight;
-																				workInfluence.Add( influence );
-																			}
-																		}
-																	}
-
-																	if( totalWeight  > 0.0f )
-																	{
-																		workInfluence.Sort(
-																			[]( const FVertInfluence& a, const FVertInfluence& b ){
-																			return a.Weight > b.Weight; 
-																		});
-																		for( auto& influence : workInfluence )
-																		{
-																			influence.Weight /= totalWeight;
-																			lodInfluences.Add( influence );
-																		}	
-																	}
-																}
-															}
-															
-														}
-														else
-														{
-															int boneIndex = 0;
-															for( int iBone = 0; iBone < boneList.Num(); ++iBone )
-															{
-																if( meshName == boneList[ iBone ].Name.ToString() )
-																{
-																	boneIndex = iBone;
-																	break;
-																}
-															}
-
-															for( int iVertex = 0; iVertex < numVertexPoints; ++iVertex )
-															{
-																FVertInfluence influence;
-																influence.BoneIndex = boneIndex;
-																influence.VertIndex	= currentVertexBase + iVertex;
-																influence.Weight	= 1.0f;
-																lodInfluences.Add( influence );
-															}
-														}
+														influence.Weight	= weight;
+														totalWeight += influence.Weight;
+														workInfluence.Add( influence );
 													}
+												}
 
-
-													for( auto polygon : polygonList )
+												if( totalWeight  > 0.0f )
+												{
+													workInfluence.Sort(
+														[]( const FVertInfluence& a, const FVertInfluence& b ){
+														return a.Weight > b.Weight; 
+													});
+													for( auto& influence : workInfluence )
 													{
-														auto polygonObj = polygon->AsObject();
-														if( 
-															polygonObj.IsValid() &&
-															polygonObj->HasField( "VertexIndexList" ) &&
-															polygonObj->HasField( "SmoothingGroup" ) &&
-															polygonObj->HasField( "ColorList0" ) &&
-															polygonObj->HasField( "NormalList" ) &&
-															polygonObj->HasField( "UVList0" ) &&
-															polygonObj->HasField( "UVList1" ) &&
-															polygonObj->HasField( "UVList2" ) &&
-															polygonObj->HasField( "UVList3" )
+														influence.Weight /= totalWeight;
+														lodInfluences.Add( influence );
+													}	
+												}
+											}
+															
+										}
+										else
+										{
+											int boneIndex = 0;
+											for( int iBone = 0; iBone < boneList.Num(); ++iBone )
+											{
+												if( mesh.MeshName == boneList[ iBone ].Name.ToString() )
+												{
+													boneIndex = iBone;
+													break;
+												}
+											}
+
+											for( int iVertex = 0; iVertex < numVertexPoints; ++iVertex )
+											{
+												FVertInfluence influence;
+												influence.BoneIndex = boneIndex;
+												influence.VertIndex	= currentVertexBase + iVertex;
+												influence.Weight	= 1.0f;
+												lodInfluences.Add( influence );
+											}
+										}
+									}
+
+
+									for( const auto& polygon : materialGroup.PolygonList )
+									{
+										auto numVertices		= polygon.VertexIndexList.Num();
+										for( int iFace = 0; iFace < numVertices; iFace+=3 )
+										{
+											FMeshFace face;
+											FMemory::Memset( &face, 0, sizeof( face ) );
+
+											for( int iTriangle = 0; iTriangle < 3; ++iTriangle )
+											{
+												auto vertexIndex = polygon.VertexIndexList[ iFace + iTriangle ];
+
+												polygonIndexList.Add( vertexIndex );
+
+												FMeshWedge wedge;
+												wedge.iVertex	= vertexIndex + currentVertexBase;
+												wedge.Color		= FColor::White;
+
+												const auto& colorObj = polygon.ColorList0[ iFace + iTriangle ];
+												{
+													wedge.Color.R = ( uint8 )( colorObj.X * 255.0 );
+													wedge.Color.G = ( uint8 )( colorObj.Y * 255.0 );
+													wedge.Color.B = ( uint8 )( colorObj.Z * 255.0 );
+													wedge.Color.A = ( uint8 )( colorObj.W * 255.0 );
+												}
+
+												if( polygon.UVList0.Num() > 0 )
+												{
+													const auto& uvObject = polygon.UVList0[ iFace + iTriangle ];
+													{
+														wedge.UVs[ 0 ].X = uvObject.X;
+														wedge.UVs[ 0 ].Y = 1.0f - uvObject.Y;
+													}
+												}
+												if( polygon.UVList1.Num() > 0 )
+												{
+													const auto& uvObject = polygon.UVList1[ iFace + iTriangle ];
+													{
+														wedge.UVs[ 1 ].X = uvObject.X;
+														wedge.UVs[ 1 ].Y = 1.0f - uvObject.Y;
+													}
+												}
+												if( polygon.UVList2.Num() > 0 )
+												{
+													const auto& uvObject = polygon.UVList2[ iFace + iTriangle ];
+													{
+														wedge.UVs[ 2 ].X = uvObject.X;
+														wedge.UVs[ 2 ].Y = 1.0f - uvObject.Y;
+													}
+												}
+												if( polygon.UVList3.Num() > 0 )
+												{
+													const auto& uvObject = polygon.UVList3[ iFace + iTriangle ];
+													{
+														wedge.UVs[ 3 ].X = uvObject.X;
+														wedge.UVs[ 3 ].Y = 1.0f - uvObject.Y;
+													}
+												}
+
+												face.iWedge[ iTriangle ] = lodWedges.Add( wedge );
+
+												face.TangentX[ iTriangle ] = FVector::ZeroVector;
+												face.TangentY[ iTriangle ] = FVector::ZeroVector;
+												face.TangentZ[ iTriangle ] = FVector::ZeroVector;
+
+												if( polygon.NormalList.Num() > 0 )
+												{
+													const auto& normalObj = polygon.NormalList[ iFace + iTriangle ];
+													{
+														face.TangentZ[ iTriangle ] = 
+															FVector(
+																normalObj.X,
+																normalObj.Y,
+																normalObj.Z
+															);
+													}
+												}
+												else if( mesh.PointNormalList.Num() > 0 && vertexIndex < mesh.PointNormalList.Num() )
+												{
+													const auto& normalObj = mesh.PointNormalList[ vertexIndex ];
+													{
+														face.TangentZ[ iTriangle ] = 
+															FVector(
+																normalObj.X,
+																normalObj.Y,
+																normalObj.Z
+															);
+													}
+												}
+
+												faceIndexUVs.Add( wedge.UVs[ 0 ] );
+											}
+											faceInSmoothingGroupIndexList.Add( polygon.SmoothingGroup );
+
+
+											face.MeshMaterialIndex = section.MaterialIndex;
+																
+											face.SmoothingGroups = polygon.SmoothingGroup;
+											lodFaces.Add( face );
+										}
+									}
+
+
+									auto numMorph = mesh.MorphList.Num();
+									if( numMorph > 0 )
+									{
+										for( int iMorph = 0; iMorph < numMorph; ++iMorph )
+										{
+											const auto& morphObject = mesh.MorphList[ iMorph ];
+											if( morphObject.VertexList.Num() > 0 )
+											{
+												MorphData* morphData = morphDataMap.Find( morphObject.MorphName );
+												if( !morphData )
+												{
+													MorphData newMorphData;
+													newMorphData.MorphTarget = NewObject<UMorphTarget>( skeltalMesh, FName( *morphObject.MorphName ) );
+													morphDataMap.Add( morphObject.MorphName, newMorphData );
+													morphData = morphDataMap.Find( morphObject.MorphName );
+												}
+
+
+												for( int iVertex = 0; iVertex < morphObject.VertexList.Num(); ++iVertex )
+												{
+													uint32 vertexIndex = iVertex + currentVertexBase;
+													const auto& vertexData = morphObject.VertexList[ iVertex ];
+
+													morphData->DeltaPositionList.Add(
+														MorphDeltaPosition(
+															FVector(
+																vertexData.DeltaPoint.X,
+																vertexData.DeltaPoint.Y,
+																vertexData.DeltaPoint.Z
+															),
+															vertexIndex
 														)
-														{
-															auto vertexIndexList	= polygonObj->GetArrayField( "VertexIndexList" );
-
-															auto smoothingGroup	= polygonObj->GetIntegerField( "SmoothingGroup" );
-
-															auto colorList0	= polygonObj->GetArrayField( "ColorList0" );
-															auto normalList	= polygonObj->GetArrayField( "NormalList" );
-															auto uvList0	= polygonObj->GetArrayField( "UVList0" );
-															auto uvList1	= polygonObj->GetArrayField( "UVList1" );
-															auto uvList2	= polygonObj->GetArrayField( "UVList2" );
-															auto uvList3	= polygonObj->GetArrayField( "UVList3" );
-
-															auto numVertices		= vertexIndexList.Num();
-															
-															for( int iFace = 0; iFace < numVertices; iFace+=3 )
-															{
-																FMeshFace face;
-
-																FMemory::Memset( &face, 0, sizeof( face ) );
-
-																
-
-																for( int iTriangle = 0; iTriangle < 3; ++iTriangle )
-																{
-																	auto vertexIndex = FCString::Atoi( *( vertexIndexList[ iFace + iTriangle ])->AsString() );
-
-																	polygonIndexList.Add( vertexIndex );
-
-																	FMeshWedge wedge;
-																	wedge.iVertex	= vertexIndex + currentVertexBase;
-																	wedge.Color		= FColor::White;
-
-																	auto colorObj = colorList0[ iFace + iTriangle ]->AsObject();
-																	if( colorObj.IsValid() )
-																	{
-																		wedge.Color.R = ( uint8 )( colorObj->GetNumberField( "X" ) * 255.0 );
-																		wedge.Color.G = ( uint8 )( colorObj->GetNumberField( "Y" ) * 255.0 );
-																		wedge.Color.B = ( uint8 )( colorObj->GetNumberField( "Z" ) * 255.0 );
-																		wedge.Color.A = ( uint8 )( colorObj->GetNumberField( "W" ) * 255.0 );
-																	}
-
-																	if( uvList0.Num() > 0 )
-																	{
-																		auto uvObject = uvList0[ iFace + iTriangle ]->AsObject();
-																		if( uvObject.IsValid() )
-																		{
-																			wedge.UVs[ 0 ].X = uvObject->GetNumberField( "X" );
-																			wedge.UVs[ 0 ].Y = 1.0f - uvObject->GetNumberField( "Y" );
-																		}
-																	}
-																	if( uvList1.Num() > 0 )
-																	{
-																		auto uvObject = uvList1[ iFace + iTriangle ]->AsObject();
-																		if( uvObject.IsValid() )
-																		{
-																			wedge.UVs[ 1 ].X = uvObject->GetNumberField( "X" );
-																			wedge.UVs[ 1 ].Y = 1.0f - uvObject->GetNumberField( "Y" );
-																		}
-																	}
-																	if( uvList2.Num() > 0 )
-																	{
-																		auto uvObject = uvList2[ iFace + iTriangle ]->AsObject();
-																		if( uvObject.IsValid() )
-																		{
-																			wedge.UVs[ 2 ].X = uvObject->GetNumberField( "X" );
-																			wedge.UVs[ 2 ].Y = 1.0f - uvObject->GetNumberField( "Y" );
-																		}
-																	}
-																	if( uvList3.Num() > 0 )
-																	{
-																		auto uvObject = uvList3[ iFace + iTriangle ]->AsObject();
-																		if( uvObject.IsValid() )
-																		{
-																			wedge.UVs[ 3 ].X = uvObject->GetNumberField( "X" );
-																			wedge.UVs[ 3 ].Y = 1.0f - uvObject->GetNumberField( "Y" );
-																		}
-																	}
-
-																	face.iWedge[ iTriangle ] = lodWedges.Add( wedge );
-
-																	face.TangentX[ iTriangle ] = FVector::ZeroVector;
-																	face.TangentY[ iTriangle ] = FVector::ZeroVector;
-																	face.TangentZ[ iTriangle ] = FVector::ZeroVector;
-
-																	if( normalList.Num() > 0 )
-																	{
-																		auto normalObj = normalList[ iFace + iTriangle ]->AsObject();
-																		if( normalObj.IsValid() )
-																		{
-																			face.TangentZ[ iTriangle ] = 
-																				FVector(
-																					normalObj->GetNumberField( "X" ),
-																					normalObj->GetNumberField( "Y" ),
-																					normalObj->GetNumberField( "Z" )
-																				);
-																		}
-																	}
-																	else if( pointNormalList.Num() > 0 && vertexIndex < pointNormalList.Num() )
-																	{
-																		auto normalObj = pointNormalList[ vertexIndex ]->AsObject();
-																		if( normalObj.IsValid() )
-																		{
-																			face.TangentZ[ iTriangle ] = 
-																				FVector(
-																					normalObj->GetNumberField( "X" ),
-																					normalObj->GetNumberField( "Y" ),
-																					normalObj->GetNumberField( "Z" )
-																				);
-																		}
-																	}
-
-																	faceIndexUVs.Add( wedge.UVs[ 0 ] );
-																}
-																faceInSmoothingGroupIndexList.Add( smoothingGroup );
-
-
-																face.MeshMaterialIndex = section.MaterialIndex;
-																
-																face.SmoothingGroups = smoothingGroup;
-																lodFaces.Add( face );
-															}
-														}
-													}
-
-
-													auto numMorph = morphList.Num();
-													if( numMorph > 0 )
-													{
-														for( int iMorph = 0; iMorph < numMorph; ++iMorph )
-														{
-															const auto& morphData = morphList[ iMorph ]->AsObject();
-
-															if(
-																morphData.IsValid() &&
-																morphData->HasField( "MorphName" ) &&
-																morphData->HasField( "VertexList" )
-															)
-															{
-																auto vertexList = morphData->GetArrayField( "VertexList" );
-																auto numVertexList = vertexList.Num();
-																if( numVertexList > 0 )
-																{
-																	auto morphName = morphData->GetStringField( "MorphName" );
-
-																	MorphData* morphData = morphDataMap.Find( morphName );
-																	if( !morphData )
-																	{
-																		MorphData newMorphData;
-																		newMorphData.MorphTarget = NewObject<UMorphTarget>( skeltalMesh, FName( *morphName ) );
-																		morphDataMap.Add( morphName, newMorphData );
-																		morphData = morphDataMap.Find( morphName );
-																	}
-
-
-																	for( int iVertex = 0; iVertex < numVertexList; ++iVertex )
-																	{
-																		uint32 vertexIndex = iVertex + currentVertexBase;
-																		auto vertexData = vertexList[ iVertex ]->AsObject();
-																		if(
-																			vertexData.IsValid() &&
-																			vertexData->HasField( "DeltaPoint" )
-																		)
-																		{
-																			auto deltaPoint	= vertexData->GetObjectField( "DeltaPoint" );
-																			if( deltaPoint.IsValid() )
-																			{
-																				morphData->DeltaPositionList.Add(
-																					MorphDeltaPosition(
-																						FVector(
-																							deltaPoint->GetNumberField( "X" ),
-																							deltaPoint->GetNumberField( "Y" ),
-																							deltaPoint->GetNumberField( "Z" )
-																						),
-																						vertexIndex
-																					)
-																				);
-																			}
-																			else
-																			{
-																				morphData->DeltaPositionList.Add( MorphDeltaPosition( FVector::ZeroVector, vertexIndex ) );
-																			}
-																		}
-																		else
-																		{
-																			morphData->DeltaPositionList.Add( MorphDeltaPosition( FVector::ZeroVector, vertexIndex ) );
-																		}
-																	}
-																}
-															}
-														}
-													}
-													findUpdateMesh = true;
+													);
 												}
 											}
 										}
 									}
-								}
-							}
-
-
-							if( !findUpdateMesh )
-							{
-								int currentVertexBase = lodPoints.Num();
-								int numVertex = section.SoftVertices.Num();
-
-								for( int iVertex = 0; iVertex < numVertex; ++iVertex )
-								{
-									const auto& vertex = section.SoftVertices[ iVertex ];
-									lodPoints.Add( FVector( vertex.Position.X, vertex.Position.Y, vertex.Position.Z ) );
-
-									int vertexIndex = iVertex + currentVertexBase;
-
-									for( int iInFluence = 0; iInFluence < section.MaxBoneInfluences; ++iInFluence )
-									{
-										FVertInfluence influence;
-										influence.BoneIndex = vertex.InfluenceBones[ iInFluence ];
-										influence.VertIndex	= vertexIndex;
-										influence.Weight	= ( float )vertex.InfluenceWeights[ iInFluence ] / 255.0f;
-
-										lodInfluences.Add( influence );
-									}
-								}
-
-								for( uint32 iTriangle = 0; iTriangle < section.NumTriangles; ++iTriangle )
-								{
-
-									FMeshFace face;
-									for( int iVertex = 0; iVertex < 3; ++iVertex )
-									{
-										int vertexIndex = lodModel.IndexBuffer[ iTriangle * 3 + iVertex + section.BaseIndex ] - section.BaseVertexIndex;
-
-										const auto& vertex = section.SoftVertices[ vertexIndex ];
-
-										FMeshWedge wedge;
-										wedge.iVertex	= vertexIndex + currentVertexBase;
-										wedge.Color		= vertex.Color;
-
-										FMemory::Memcpy( wedge.UVs, vertex.UVs, sizeof( vertex.UVs ) );
-										face.iWedge[ iVertex ] = lodWedges.Add( wedge );
-
-
-										face.TangentX[ iVertex ] = vertex.TangentX;
-										face.TangentY[ iVertex ] = vertex.TangentY;
-										face.TangentZ[ iVertex ] = vertex.TangentZ;
-
-									}
-
-									face.MeshMaterialIndex	= section.MaterialIndex;
-									face.SmoothingGroups	= 255;
-									lodFaces.Add( face );
+									findUpdateMesh = true;
 								}
 							}
 						}
 
+
+						if( !findUpdateMesh )
+						{
+							int currentVertexBase = lodPoints.Num();
+							int numVertex = section.SoftVertices.Num();
+
+							for( int iVertex = 0; iVertex < numVertex; ++iVertex )
+							{
+								const auto& vertex = section.SoftVertices[ iVertex ];
+								lodPoints.Add( FVector( vertex.Position.X, vertex.Position.Y, vertex.Position.Z ) );
+
+								int vertexIndex = iVertex + currentVertexBase;
+
+								for( int iInFluence = 0; iInFluence < section.MaxBoneInfluences; ++iInFluence )
+								{
+									FVertInfluence influence;
+									influence.BoneIndex = vertex.InfluenceBones[ iInFluence ];
+									influence.VertIndex	= vertexIndex;
+									influence.Weight	= ( float )vertex.InfluenceWeights[ iInFluence ] / 255.0f;
+
+									lodInfluences.Add( influence );
+								}
+							}
+
+							for( uint32 iTriangle = 0; iTriangle < section.NumTriangles; ++iTriangle )
+							{
+
+								FMeshFace face;
+								for( int iVertex = 0; iVertex < 3; ++iVertex )
+								{
+									int vertexIndex = lodModel.IndexBuffer[ iTriangle * 3 + iVertex + section.BaseIndex ] - section.BaseVertexIndex;
+
+									const auto& vertex = section.SoftVertices[ vertexIndex ];
+
+									FMeshWedge wedge;
+									wedge.iVertex	= vertexIndex + currentVertexBase;
+									wedge.Color		= vertex.Color;
+
+									FMemory::Memcpy( wedge.UVs, vertex.UVs, sizeof( vertex.UVs ) );
+									face.iWedge[ iVertex ] = lodWedges.Add( wedge );
+
+
+									face.TangentX[ iVertex ] = vertex.TangentX;
+									face.TangentY[ iVertex ] = vertex.TangentY;
+									face.TangentZ[ iVertex ] = vertex.TangentZ;
+
+								}
+
+								face.MeshMaterialIndex	= section.MaterialIndex;
+								face.SmoothingGroups	= 255;
+								lodFaces.Add( face );
+							}
+						}
 					}
+
 
 
 					lodPointToRawMap.AddZeroed( lodPoints.Num() );

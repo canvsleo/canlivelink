@@ -327,20 +327,10 @@ public:
 	{
 		static const Matrix3 invertFrontZMatrix(
 			Point3( 1.0f, 0.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 1.0f ),
-			Point3( 0.0f, -1.0f, 0.0f ),
+			Point3( 0.0f, 0.0f,-1.0f ),
+			Point3( 0.0f, 1.0f, 0.0f ),
 			Point3( 0.0f, 0.0f, 0.0f )
 		);
-
-		/*
-		FrontZMatrix(
-			Point3( 1.0f, 0.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 1.0f ),
-			Point3( 0.0f, -1.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 0.0f )
-		);
-		*/
-
 		return invertFrontZMatrix;
 	}
 
@@ -430,9 +420,12 @@ void	NodeEventCallbackValue::MappingChanged( NodeKeyTab& nodes )
 			}
 		}
 	}
-	if( nodeList.Num() > 0 )
+	if( 
+		nodeList.Num() > 0 &&
+		this->maxLink_->UseAutomaticMeshUpdate()
+	)
 	{
-		this->maxLink_->ReceiveChangeGeometoryNodes( nodeList );
+		this->maxLink_->ApplyCurrentFrameSubjects( true );
 	}
 }
 
@@ -620,16 +613,7 @@ public:
 
 
 		const auto& frontXMatrix = FMaxLiveLink::GetFrontXMatrix();
-
-		Matrix3 vm(
-			Point3( 1.0f, 0.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 1.0f ),
-			Point3( 0.0f,-1.0f, 0.0f ),
-			Point3( 0.0f, 0.0f, 0.0f )
-		);
-
-		vm.Invert();
-
+		const auto& invFrontZMatrix = FMaxLiveLink::GetInvertFrontZMatrix();
 		const auto& frontXRootMatrix = FMaxLiveLink::GetFrontXRootMatrix();
 
 
@@ -638,7 +622,7 @@ public:
 
 		if( frontAxisX )
 		{
-			transformMatrix = ( transformMatrix * vm ) * frontXMatrix;
+			transformMatrix = ( transformMatrix * invFrontZMatrix ) * frontXMatrix;
 			transformMatrix = frontXRootMatrix * transformMatrix;
 		}
 
@@ -694,7 +678,7 @@ public:
 
 			if( frontAxisX )
 			{
-				parentMtx = frontXRootMatrix * ( ( parentMtx * vm ) * frontXMatrix );
+				parentMtx = frontXRootMatrix * ( ( parentMtx * invFrontZMatrix ) * frontXMatrix );
 			}
 
 			parentMtx.Invert();
@@ -966,130 +950,95 @@ public:
 		unitScale = 1.0;
 		//unitScale = 2.311;
 
-		Matrix3 viewAffine;
-		vpt->GetAffineTM( viewAffine );
-
 		auto distance	= vpt->GetFocalDist();
 		auto scale		= vpt->NonScalingObjectSize();
-
-		auto trans = viewAffine.GetRow( 3 );
-
-		FQuat quat = FQuat::Identity;
 
 		auto viewType	= vpt->GetViewType();
 		auto fov		= vpt->GetFOV();
 		auto zoom		= vpt->GetZoom();
 
-		Point3 screenScale( 1,1,1 );
-		auto screenScaleFactor = vpt->GetScreenScaleFactor( screenScale );
+		auto scaleValue			= FVector::OneVector;
+		auto rotateValue		= FQuat::Identity;
+		auto translationValue	= FVector::ZeroVector;
 
-		auto cameraScale = FVector::OneVector;
 
 		FLiveLinkMetaData metaData;
 		metaData.SceneTime.Frames		= frame;
 		metaData.SceneTime.FrameRate	= FLiveLinkFrameRate( (uint32)(1.0f / vpt->GetFPS()), 1 );
 		metaData.SceneTime.Seconds		= (int32)( streamTime );
 
-		auto graphicWindow = vpt->getGW();
-		if( graphicWindow )
+		metaData.StringMetaData.Add( FName( TEXT( "fov" ) ), FString::SanitizeFloat( FMath::RadiansToDegrees( fov ) ) );
+
+		const auto& frontXMatrix = FMaxLiveLink::GetFrontXMatrix();
+		const auto& invFrontZMatrix = FMaxLiveLink::GetInvertFrontZMatrix();
+		const auto& frontXRootMatrix = FMaxLiveLink::GetFrontXRootMatrix();
+
+
+		Matrix3 viewAffine;
+		vpt->GetAffineTM( viewAffine );
+		AffineParts affine;
+		auto trans = viewAffine.GetRow( 3 );
 		{
-			auto transform = graphicWindow->getTransform();
+			auto inv = invFrontZMatrix;
+			inv.Invert();
 
-			Matrix3 invTm;
-			float mtx[4][4];
-			int persp;
-			float hither;
-			float yon;
+			Matrix3 baseRotate;
+			baseRotate.SetRow( 0, Point3( 0.0f,-1.0f, 0.0f ) );
+			baseRotate.SetRow( 1, Point3( 1.0f, 0.0f, 0.0f ) );
+			baseRotate.SetRow( 2, Point3( 0.0f, 0.0f, 1.0f ) );
+			baseRotate.SetRow( 3, Point3( 0.0f, 0.0f, 0.0f ) );
 
-			graphicWindow->getCameraMatrix(
-				mtx,
-				&invTm,
-				&persp,
-				&hither, &yon
-			);
+			viewAffine = viewAffine * inv;
 
+			if( this->livelinkReference_->UseForceFrontAxisX() )
 			{
-				cameraScale.X = zoom;
-				cameraScale.Y = zoom;
-				cameraScale.Z = zoom;
+				Matrix3 rotate;
+				rotate.SetRow( 0, Point3( 0.0f,-1.0f, 0.0f ) );
+				rotate.SetRow( 1, Point3( 1.0f, 0.0f, 0.0f ) );
+				rotate.SetRow( 2, Point3( 0.0f, 0.0f, 1.0f ) );
+				rotate.SetRow( 3, Point3( 0.0f, 0.0f, 0.0f ) );
+				
+				viewAffine = rotate * viewAffine;
+			}
+			{
+				viewAffine.SetRow( 3, Point3( 0.0f, 0.0f, 0.0f ) );
+				auto invRotate = viewAffine;
+				trans = Point3( -trans.x, trans.z, -trans.y );
+				invRotate.Invert();
+				trans = trans * invRotate;
 			}
 
-			auto fovRad = FMath::RadiansToDegrees( fov );
-
-			metaData.StringMetaData.Add( FName( TEXT("fov") ), FString::SanitizeFloat( fovRad ));
-			
-			/*
-			if( vpt->GetViewCamera() )
+			viewAffine = viewAffine * baseRotate;
+		}
+		decomp_affine( viewAffine, &affine );
+		{
 			{
-				invTm = vpt->GetViewCamera()->GetNodeTM( SecToTicks( streamTime ) );
-
-				trans = invTm.GetTrans();
-				invTm.SetRow( 3, Point3( 0.0, 0.0, 0.0 ) );
-				trans = trans * invTm;
-
-				if( vpt->GetViewSpot() )
-				{
-					auto viewSpotTM = vpt->GetViewSpot()->GetNodeTM( SecToTicks( streamTime ) );
-
-					auto viewSpotPos = viewSpotTM.GetTrans();
-
-					distance = ( viewSpotPos - trans ).Length();
-
-				}
+				rotateValue.X		= affine.q.x;
+				rotateValue.Y		=-affine.q.y;
+				rotateValue.Z		= affine.q.z;
+				rotateValue.W		=-affine.q.w;
 			}
-			*/
-
-			Matrix3 rotateMtx;
-			rotateMtx.SetRow( 0, Point3( 0.0, 0.0,-1.0 ) );
-			rotateMtx.SetRow( 1, Point3( 0.0, 1.0, 0.0 ) );
-			rotateMtx.SetRow( 2, Point3(-1.0, 0.0, 0.0 ) );
-			rotateMtx.SetRow( 3, Point3( 0.0, 0.0, 0.0 ) );
-
-			Matrix3 convMtx;
-			convMtx.SetRow( 0, Point3( 1.0, 0.0, 0.0 ) );
-			convMtx.SetRow( 1, Point3( 0.0, 0.0, 1.0 ) );
-			convMtx.SetRow( 2, Point3( 0.0, -1.0, 0.0 ) );
-			convMtx.SetRow( 3, Point3( 0.0, 0.0, 0.0 ) );
-			convMtx.Invert();
-
-			viewAffine = ( ( invTm ) * convMtx );
-
-			viewAffine *= rotateMtx;
-			
-
-			viewAffine.SetRow( 3, Point3( 0.0, 0.0, 0.0 ) );
-
-			float yaw;
-			float pitch;
-			float roll;
-			viewAffine.GetYawPitchRoll( &yaw, &pitch, &roll );
-
-			quat = 
-				FQuat( FRotator( 
-					FMath::RadiansToDegrees( pitch ), 
-					FMath::RadiansToDegrees( yaw ),
-					FMath::RadiansToDegrees( roll )
-				) );
-
-			auto pos = Point3( 0.0f, 0.0f, distance );
-			pos = pos * viewAffine;
-
-			invTm.SetRow( 3, Point3( 0.0, 0.0, 0.0 ) );
-			trans = trans * viewAffine;
-			trans = Point3( -trans.x, trans.y, -trans.z );
-			trans += Point3( pos.x, -pos.y, pos.z );
+			{
+				scaleValue.X	= affine.k.x * zoom;
+				scaleValue.Y	= affine.k.y * zoom;
+				scaleValue.Z	= affine.k.z * zoom;
+			}
+			{
+				
+				translationValue.X = trans.x;
+				translationValue.Y =-trans.y;
+				translationValue.Z = trans.z;
+			}
 		}
 
 		TArray<FTransform> transformList =
 		{
 			FTransform(
-				quat,
-				FVector( -trans.z * unitScale, -trans.x * unitScale, -trans.y * unitScale ),
-				cameraScale
+				rotateValue,
+				translationValue,
+				scaleValue
 			)
 		};
-
-		
 
 		TArray<FLiveLinkCurveElement> curves;
 
@@ -2121,7 +2070,7 @@ FMaxLiveLink::FMaxLiveLink(
 	, buttonRemoveSubject_( nullptr )
 	, textSubjectName_( nullptr )
 	, listSubject_( NULL )
-	, useForceFrontX_Cache_( false )
+	, useForceFrontX_Cache_( true )
 	, useSendMeshAutomatically_Cache_( false )
 {
 }
@@ -2491,7 +2440,7 @@ bool	FMaxLiveLink::UseForceFrontAxisX() const
 {
 	if( !this->windowHandle_ )
 	{
-		return false;
+		return this->useForceFrontX_Cache_;
 	}
 	return IsDlgButtonChecked( this->windowHandle_, IDC_CHECK_ForceFrontX ) == TRUE;
 }
@@ -2500,7 +2449,7 @@ bool	FMaxLiveLink::UseAutomaticMeshUpdate() const
 {
 	if( !this->windowHandle_ )
 	{
-		return false;
+		return this->useSendMeshAutomatically_Cache_;
 	}
 	return IsDlgButtonChecked( this->windowHandle_, IDC_CHECK_SendMeshAutomatically ) == TRUE;
 }
@@ -2740,28 +2689,28 @@ void	FMaxLiveLink::ModelOtherEvent()
 
 void	FMaxLiveLink::OnDisplay( TimeValue t, ViewExp* vpt, int flags )
 {
-	if( this->lastUpdateTime_ == t )
-	{
-		return;
-	}
-	this->lastUpdateTime_ = t;
-
 	double	frameSeconds	= TicksToSec( t );
 	int		frame			= t / GetTicksPerFrame();
 
+	if( this->lastUpdateTime_ != t )
 	{
+		this->lastUpdateTime_ = t;
+		
 
-		if( !this->UseAutomaticMeshUpdate() )
 		{
+
+			if( !this->UseAutomaticMeshUpdate() )
+			{
+				for( auto stream : this->skinNodeSubjectList_ )
+				{
+					stream.Value->SettingUpdateGeometry( false );
+				}
+			}
+
 			for( auto stream : this->skinNodeSubjectList_ )
 			{
-				stream.Value->SettingUpdateGeometry( false );
+				stream.Value->OnStream( frameSeconds, frame );
 			}
-		}
-
-		for( auto stream : this->skinNodeSubjectList_ )
-		{
-			stream.Value->OnStream( frameSeconds, frame );
 		}
 	}
 	auto vp13 = reinterpret_cast<ViewExp13*>( vpt->Execute( ViewExp::kEXECUTE_GET_VIEWEXP_13 ) );
