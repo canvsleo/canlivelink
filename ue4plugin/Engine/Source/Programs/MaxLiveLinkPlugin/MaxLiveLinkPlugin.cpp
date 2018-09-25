@@ -464,7 +464,10 @@ void	NodeEventCallbackValue::Deleted( NodeKeyTab& nodes )
 
 void	NodeEventCallbackValue::Display( TimeValue t, ViewExp *vpt, int flags )
 {
-	this->maxLink_->OnDisplay( t, vpt, flags );
+	if( vpt->IsActive() )
+	{
+		this->maxLink_->OnDisplay( t, vpt, flags );
+	}
 }
 
 
@@ -957,17 +960,14 @@ public:
 		auto fov		= vpt->GetFOV();
 		auto zoom		= vpt->GetZoom();
 
+		auto degFov		= FMath::RadiansToDegrees( fov );
+
 		auto scaleValue			= FVector::OneVector;
 		auto rotateValue		= FQuat::Identity;
 		auto translationValue	= FVector::ZeroVector;
 
 
-		FLiveLinkMetaData metaData;
-		metaData.SceneTime.Frames		= frame;
-		metaData.SceneTime.FrameRate	= FLiveLinkFrameRate( (uint32)(1.0f / vpt->GetFPS()), 1 );
-		metaData.SceneTime.Seconds		= (int32)( streamTime );
-
-		metaData.StringMetaData.Add( FName( TEXT( "fov" ) ), FString::SanitizeFloat( FMath::RadiansToDegrees( fov ) ) );
+		
 
 		const auto& frontXMatrix = FMaxLiveLink::GetFrontXMatrix();
 		const auto& invFrontZMatrix = FMaxLiveLink::GetInvertFrontZMatrix();
@@ -1003,9 +1003,34 @@ public:
 			{
 				viewAffine.SetRow( 3, Point3( 0.0f, 0.0f, 0.0f ) );
 				auto invRotate = viewAffine;
-				trans = Point3( -trans.x, trans.z, -trans.y );
 				invRotate.Invert();
+				trans = Point3( -trans.x, trans.z, -trans.y );
 				trans = trans * invRotate;
+
+
+				auto graphicWindos = vpt->getGW();
+				if( graphicWindos )
+				{
+					float mat[ 4 ][ 4 ];
+					Matrix3 invTM;
+					int persp;
+					float hither;
+					float yon;
+
+					
+					graphicWindos->getCameraMatrix(
+						mat, &invTM,
+						&persp, &hither, &yon
+					);
+
+					if( !persp )
+					{
+						Point3 offset = Point3( 0.0f, -100.0f * degFov, 0.0f );
+						offset = offset * invRotate;
+						trans += offset;
+						degFov = 5;
+					}
+				}
 			}
 
 			viewAffine = viewAffine * baseRotate;
@@ -1019,9 +1044,9 @@ public:
 				rotateValue.W		=-affine.q.w;
 			}
 			{
-				scaleValue.X	= affine.k.x * zoom;
-				scaleValue.Y	= affine.k.y * zoom;
-				scaleValue.Z	= affine.k.z * zoom;
+				scaleValue.X	= affine.k.x;
+				scaleValue.Y	= affine.k.y;
+				scaleValue.Z	= affine.k.z;
 			}
 			{
 				
@@ -1041,6 +1066,13 @@ public:
 		};
 
 		TArray<FLiveLinkCurveElement> curves;
+
+		FLiveLinkMetaData metaData;
+		metaData.SceneTime.Frames		= frame;
+		metaData.SceneTime.FrameRate	= FLiveLinkFrameRate( ( uint32 )( 1.0f / vpt->GetFPS() ), 1 );
+		metaData.SceneTime.Seconds		= ( int32 )( streamTime );
+
+		metaData.StringMetaData.Add( FName( TEXT( "fov" ) ), FString::SanitizeFloat( degFov ) );
 
 		this->GetLiveLinkProvider()->UpdateSubjectFrame(
 			this->subjectName_,
@@ -2457,7 +2489,7 @@ bool	FMaxLiveLink::UseAutomaticMeshUpdate() const
 
 
 
-void	FMaxLiveLink::OnReceiveDialogCallbackCommand( WPARAM wParam )
+void	FMaxLiveLink::O nReceiveDialogCallbackCommand( WPARAM wParam )
 {
 	switch( LOWORD( wParam ) )
 	{
