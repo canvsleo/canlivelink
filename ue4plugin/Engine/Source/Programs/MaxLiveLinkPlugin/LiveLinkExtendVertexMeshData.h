@@ -1,4 +1,9 @@
 
+/*! @file		LiveLinkExtendVertexMeshData.h
+	@brief		LiveLinkExtendPreviewPlugin にて使用する\n
+				メッシュ同期用データ群
+*/
+
 #pragma once
 
 
@@ -37,6 +42,11 @@ FArchive& SerializeTArray( FArchive& Ar, TArray< ElementType >& arrayData )
 	return Ar;
 }
 
+
+
+/*! @struct		FLiveLinkExtendPoint3
+	@brief		汎用的な3要素データ
+*/
 USTRUCT()
 struct FLiveLinkExtendPoint3
 {
@@ -75,8 +85,27 @@ struct FLiveLinkExtendPoint3
 
 		return Ar;
 	}
+
+	bool operator==( const FLiveLinkExtendPoint3& rhs ) const
+	{
+		return (
+			this->X == rhs.X &&
+			this->Y == rhs.Y &&
+			this->Z == rhs.Z
+			);
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendPoint3& rhs ) const
+	{
+		return !( *this == rhs );
+	}
+
 };
 
+
+/*! @struct		FLiveLinkExtendPoint2
+	@brief		汎用的な2要素データ
+*/
 
 USTRUCT()
 struct FLiveLinkExtendPoint2
@@ -111,8 +140,25 @@ struct FLiveLinkExtendPoint2
 
 		return Ar;
 	}
+
+	bool operator==( const FLiveLinkExtendPoint2& rhs ) const
+	{
+		return (
+			this->X == rhs.X &&
+			this->Y == rhs.Y
+			);
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendPoint2& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkExtendPoint4
+	@brief		汎用的な4要素データ
+*/
 USTRUCT()
 struct FLiveLinkExtendPoint4
 {
@@ -156,8 +202,27 @@ struct FLiveLinkExtendPoint4
 
 		return Ar;
 	}
+
+	bool operator==( const FLiveLinkExtendPoint4& rhs ) const
+	{
+		return (
+			this->X == rhs.X &&
+			this->Y == rhs.Y &&
+			this->Z == rhs.Z &&
+			this->W == rhs.W
+			);
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendPoint4& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkSkinLink
+	@brief		1頂点と、ボーンを紐づける重みデータ
+*/
 USTRUCT()
 struct FLiveLinkSkinLink
 {
@@ -191,8 +256,33 @@ struct FLiveLinkSkinLink
 
 		return Ar;
 	}
+
+
+	bool operator==( const FLiveLinkSkinLink& rhs ) const
+	{
+		if( this->SkinIndex != rhs.SkinIndex )
+		{
+			return false;
+		}
+
+		if( this->SkinWeight != rhs.SkinWeight )
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkSkinLink& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkPointSkin
+	@brief		メッシュが保持するボーン影響データ
+*/
 USTRUCT()
 struct FLiveLinkPointSkin
 {
@@ -213,8 +303,40 @@ struct FLiveLinkPointSkin
 
 		return Ar;
 	}
+
+
+	bool operator==( const FLiveLinkPointSkin& rhs ) const
+	{
+		auto myNumSkin		= this->SkinList.Num();
+		auto otherNumSkin		= rhs.SkinList.Num();
+		if( myNumSkin != otherNumSkin )
+		{
+			return false;
+		}
+
+		{
+
+			for( int iSkin = 0; iSkin < myNumSkin; ++iSkin )
+			{
+				if( this->SkinList[ iSkin ] != rhs.SkinList[ iSkin ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkPointSkin& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkExtendPolygon
+	@brief		１ポリゴンごとの構成データ
+*/
 USTRUCT()
 struct FLiveLinkExtendPolygon
 {
@@ -257,8 +379,153 @@ struct FLiveLinkExtendPolygon
 
 		return Ar;
 	}
+
+
+	bool operator==( const FLiveLinkExtendPolygon& rhs ) const
+	{
+		if( this->SmoothingGroup != rhs.SmoothingGroup )
+		{
+			return false;
+		}
+
+
+		auto myNumVertexIndex		= this->VertexIndexList.Num();
+		auto otherNumVertexIndex	= rhs.VertexIndexList.Num();
+		if( myNumVertexIndex != otherNumVertexIndex )
+		{
+			return false;
+		}
+
+		auto myNumColor0		= this->ColorList0.Num();
+		auto otherNumColor0		= rhs.ColorList0.Num();
+		if( myNumColor0 != otherNumColor0 )
+		{
+			return false;
+		}
+
+
+		auto myNumUV0		= this->UVList0.Num();
+		auto otherNumUV0	= rhs.UVList0.Num();
+		if( myNumUV0 != otherNumUV0 )
+		{
+			return false;
+		}
+
+		auto myNumUV1		= this->UVList1.Num();
+		auto otherNumUV1	= rhs.UVList1.Num();
+		if( myNumUV1 != otherNumUV1 )
+		{
+			return false;
+		}
+
+		auto myNumUV2		= this->UVList2.Num();
+		auto otherNumUV2	= rhs.UVList2.Num();
+		if( myNumUV2 != otherNumUV2 )
+		{
+			return false;
+		}
+
+		auto myNumUV3		= this->UVList3.Num();
+		auto otherNumUV3	= rhs.UVList3.Num();
+		if( myNumUV3 != otherNumUV3 )
+		{
+			return false;
+		}
+
+
+		auto myNumNormal	= this->NormalList.Num();
+		auto otherNumNormal	= rhs.NormalList.Num();
+		if( myNumNormal != otherNumNormal )
+		{
+			return false;
+		}
+
+
+
+		{
+			for( int iVertexIndex = 0; iVertexIndex < myNumVertexIndex; ++iVertexIndex )
+			{
+				if( this->VertexIndexList[ iVertexIndex ] != rhs.VertexIndexList[ iVertexIndex ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iColor0 = 0; iColor0 < myNumColor0; ++iColor0 )
+			{
+				if( this->ColorList0[ iColor0 ] != rhs.ColorList0[ iColor0 ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iUV0 = 0; iUV0 < myNumUV0; ++iUV0 )
+			{
+				if( this->UVList0[ iUV0 ] != rhs.UVList0[ iUV0 ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iUV1 = 0; iUV1 < myNumUV1; ++iUV1 )
+			{
+				if( this->UVList1[ iUV1 ] != rhs.UVList1[ iUV1 ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iUV2 = 0; iUV2 < myNumUV2; ++iUV2 )
+			{
+				if( this->UVList2[ iUV2 ] != rhs.UVList2[ iUV2 ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iUV3 = 0; iUV3 < myNumUV3; ++iUV3 )
+			{
+				if( this->UVList3[ iUV3 ] != rhs.UVList3[ iUV3 ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iNormal = 0; iNormal < myNumNormal; ++iNormal )
+			{
+				if( this->NormalList[ iNormal ] != rhs.NormalList[ iNormal ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendPolygon& rhs ) const
+	{
+		return !( *this == rhs );
+	}
+
 };
 
+
+
+/*! @struct		FLiveLinkExtendMaterialGroupMeshData
+	@brief		メッシュ内のマテリアルグループごとのポリゴン形成データ
+*/
 USTRUCT()
 struct FLiveLinkExtendMaterialGroupMeshData
 {
@@ -286,8 +553,51 @@ struct FLiveLinkExtendMaterialGroupMeshData
 
 		return Ar;
 	}
+
+
+	bool operator==( const FLiveLinkExtendMaterialGroupMeshData& rhs ) const
+	{
+		if( this->MaterialName != rhs.MaterialName )
+		{
+			return false;
+		}
+
+		if( this->Triangles != rhs.Triangles )
+		{
+			return false;
+		}
+
+
+		auto myNumPolygon		= this->PolygonList.Num();
+		auto otherNumPolygon	= rhs.PolygonList.Num();
+		if( myNumPolygon != otherNumPolygon )
+		{
+			return false;
+		}
+
+		{
+
+			for( int iPolygon = 0; iPolygon < myNumPolygon; ++iPolygon )
+			{
+				if( this->PolygonList[ iPolygon ] != rhs.PolygonList[ iPolygon ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendMaterialGroupMeshData& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkExtendMeshMorphVertexData
+	@brief		モーフターゲットの頂点ごとのデータ
+*/
 USTRUCT()
 struct FLiveLinkExtendMeshMorphVertexData
 {
@@ -305,8 +615,23 @@ struct FLiveLinkExtendMeshMorphVertexData
 
 		return Ar;
 	}
+
+
+	bool operator==( const FLiveLinkExtendMeshMorphVertexData& rhs ) const
+	{
+		return this->DeltaPoint == rhs.DeltaPoint;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendMeshMorphVertexData& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
+
+/*! @struct		FLiveLinkExtendMeshMorphData
+	@brief		モーフターゲットごとのまとめデータ
+*/
 USTRUCT()
 struct FLiveLinkExtendMeshMorphData
 {
@@ -327,15 +652,51 @@ struct FLiveLinkExtendMeshMorphData
 
 		return Ar;
 	}
+
+	bool operator==( const FLiveLinkExtendMeshMorphData& rhs ) const
+	{
+		if( this->MorphName != rhs.MorphName )
+		{
+			return false;
+		}
+
+		auto myNumVertex		= this->VertexList.Num();
+		auto otherNumVertex		= rhs.VertexList.Num();
+		if( myNumVertex != otherNumVertex )
+		{
+			return false;
+		}
+
+		{
+
+			for( int iVertex = 0; iVertex < myNumVertex; ++iVertex )
+			{
+				if( this->VertexList[ iVertex ] != rhs.VertexList[ iVertex ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendMeshMorphData& rhs ) const
+	{
+		return !( *this == rhs );
+	}
 };
 
-
+/*! @struct		FLiveLinkExtendVertexMeshData
+	@brief		メッシュ単位の保持データ
+*/
 USTRUCT()
 struct FLiveLinkExtendVertexMeshData
 {
 	GENERATED_USTRUCT_BODY()
 
 	FLiveLinkExtendVertexMeshData()
+		: NumUseUVs( 1 )
+		, NumUseColors( 1 )
 	{
 	}
 
@@ -350,6 +711,9 @@ struct FLiveLinkExtendVertexMeshData
 	TArray<FString>							SkinNameList;
 
 	TArray<FLiveLinkExtendMeshMorphData>	MorphList;
+
+	int		NumUseUVs;
+	int		NumUseColors;
 
 	friend FArchive& operator<<( FArchive& Ar, FLiveLinkExtendVertexMeshData*& res )
 	{
@@ -369,10 +733,151 @@ struct FLiveLinkExtendVertexMeshData
 
 		SerializeTArray( Ar, this->MorphList );
 
+		Ar << this->NumUseUVs;
+		Ar << this->NumUseColors;
+
 		return Ar;
+	}
+
+
+	bool operator==( const FLiveLinkExtendVertexMeshData& rhs ) const
+	{
+		if( this->MeshName != rhs.MeshName )
+		{
+			return false;
+		}
+
+		if( this->NumUseUVs != rhs.NumUseUVs )
+		{
+			return false;
+		}
+
+		if( this->NumUseColors != rhs.NumUseColors )
+		{
+			return false;
+		}
+
+		auto myNumMaterialGroup		= this->MaterialGroupList.Num();
+		auto otherNumMaterialGroup	= rhs.MaterialGroupList.Num();
+		if( myNumMaterialGroup != otherNumMaterialGroup )
+		{
+			return false;
+		}
+
+
+		auto myNumPoint		= this->PointList.Num();
+		auto otherNumPoint	= rhs.PointList.Num();
+		if( myNumPoint != otherNumPoint )
+		{
+			return false;
+		}
+
+
+		auto myNumPointSkin		= this->PointSkinList.Num();
+		auto otherNumPointSkin	= rhs.PointSkinList.Num();
+		if( myNumPointSkin != otherNumPointSkin )
+		{
+			return false;
+		}
+
+
+		auto myNumPointNormal		= this->PointNormalList.Num();
+		auto otherNumPointNormal	= rhs.PointNormalList.Num();
+		if( myNumPointNormal != otherNumPointNormal )
+		{
+			return false;
+		}
+
+
+		auto myNumSkin		= this->SkinNameList.Num();
+		auto otherNumSkin	= rhs.SkinNameList.Num();
+		if( myNumSkin != otherNumSkin )
+		{
+			return false;
+		}
+
+
+		auto myNumMorph		= this->MorphList.Num();
+		auto otherNumMorph	= rhs.MorphList.Num();
+		if( myNumMorph != otherNumMorph )
+		{
+			return false;
+		}
+
+
+
+		{
+			for( int iMaterialGroup = 0; iMaterialGroup < myNumMaterialGroup; ++iMaterialGroup )
+			{
+				if( this->MaterialGroupList[ iMaterialGroup ] != rhs.MaterialGroupList[ iMaterialGroup ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iPoint = 0; iPoint < myNumPoint; ++iPoint )
+			{
+				if( this->PointList[ iPoint ] != rhs.PointList[ iPoint ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iPointSkin = 0; iPointSkin < myNumPointSkin; ++iPointSkin )
+			{
+				if( this->PointSkinList[ iPointSkin ] != rhs.PointSkinList[ iPointSkin ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iPointNormal = 0; iPointNormal < myNumPointNormal; ++iPointNormal )
+			{
+				if( this->PointNormalList[ iPointNormal ] != rhs.PointNormalList[ iPointNormal ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iSkin = 0; iSkin < myNumSkin; ++iSkin )
+			{
+				if( this->SkinNameList[ iSkin ] != rhs.SkinNameList[ iSkin ] )
+				{
+					return false;
+				}
+			}
+		}
+
+		{
+			for( int iMorph = 0; iMorph < myNumMorph; ++iMorph )
+			{
+				if( this->MorphList[ iMorph ] != rhs.MorphList[ iMorph ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendVertexMeshData& rhs ) const
+	{
+		return !( *this == rhs );
 	}
 };
 
+
+/*! @struct		FLiveLinkExtendSyncData
+	@brief		メッシュ同期データのルート
+*/
 USTRUCT()
 struct FLiveLinkExtendSyncData
 {
@@ -390,6 +895,33 @@ struct FLiveLinkExtendSyncData
 		return SerializeTArray( Ar, this->MeshList );
 	}
 
-};
 
+
+	bool operator==( const FLiveLinkExtendSyncData& rhs ) const
+	{
+		auto myMeshNum		= this->MeshList.Num();
+		auto otherMeshNum	= rhs.MeshList.Num();
+		if( myMeshNum != otherMeshNum )
+		{
+			return false;
+		}
+
+		{
+				
+			for( int iMesh = 0; iMesh < myMeshNum; ++iMesh )
+			{
+				if( this->MeshList[ iMesh ] != rhs.MeshList[ iMesh ] )
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendSyncData& rhs ) const
+	{
+		return !( *this == rhs );
+	}
+};
 

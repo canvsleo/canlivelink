@@ -1,7 +1,12 @@
-// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
-
+﻿
 #pragma once
 
+
+/*! @file		LiveLinkExtendPreviewController.hs
+	@brief		LiveLinkExtendを使用した際のメッシュプレビュー中の挙動 
+	@details	LiveLinkPreviewController.h をもとにした実装となっており、\n
+				カメラの画角とメッシュ更新が拡張されております。
+*/
 
 
 
@@ -25,27 +30,11 @@ class ULiveLinkRetargetAsset;
 class UDebugSkelMeshComponent;
 
 
-UCLASS()
-class ULiveLinkExtendPreviewController
-	: public UPersonaPreviewSceneController
-{
-public:
-	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, Category = "Live Link Extend")
-	FName SubjectName;
 
-	UPROPERTY(EditAnywhere, Category = "Live Link Extend")
-	bool bEnableCameraSync;
-
-	UPROPERTY(EditAnywhere, NoClear, Category = "Live Link Extend")
-	TSubclassOf<ULiveLinkRetargetAsset> RetargetAsset;
-
-	virtual void InitializeView(UPersonaPreviewSceneDescription* SceneDescription, IPersonaPreviewScene* PreviewScene) const;
-	virtual void UninitializeView(UPersonaPreviewSceneDescription* SceneDescription, IPersonaPreviewScene* PreviewScene) const;
-
-};
-
+/*! @struct		FLiveLinkExtendInstanceProxy
+	@brief		Subjectごとに受け取ったポーズとメタデータの適応方法
+*/
 USTRUCT()
 struct FLiveLinkExtendInstanceProxy :
 	public FLiveLinkInstanceProxy
@@ -53,44 +42,44 @@ struct FLiveLinkExtendInstanceProxy :
 public:
 	GENERATED_BODY()
 
-	FLiveLinkExtendInstanceProxy()
-		: PreviewMeshComponent( nullptr )
-	{
-		this->currentVertexiesID_		= 0;
-	}
-
-	FLiveLinkExtendInstanceProxy( UAnimInstance* InAnimInstance )
-		: FLiveLinkInstanceProxy( InAnimInstance )
-		, PreviewMeshComponent( nullptr )
-	{
-		this->currentVertexiesID_		= 0;
-	}
-
-	~FLiveLinkExtendInstanceProxy()
-	{}
+	FLiveLinkExtendInstanceProxy();
+	FLiveLinkExtendInstanceProxy( UAnimInstance* InAnimInstance );
+	~FLiveLinkExtendInstanceProxy();
 
 	virtual void Initialize( UAnimInstance* InAnimInstance ) override;
 	virtual bool Evaluate( FPoseContext& Output ) override;
 	virtual void UpdateAnimationNode( float DeltaSeconds ) override;
 
 private:
-	uint64		currentVertexiesID_;
 
+	FLiveLinkClientReference	clientRef_;
 
-	FLiveLinkClientReference ClientRef;
-
-	TMap< FString, FDateTime >	lastMeshUpdateTimeMap_;
+	//! 最後にメッシュ処理したメタデータのタイムスタンプにて同一データの多重処理を防ぐ
 	FDateTime					lastReceiveTime_;
+	TMap< FString, FDateTime >	lastMeshUpdateTimeMap_;
 
 public:
+
+	/*! 
+		プレビューに表示されているスケルタルメッシュ\n
+		メッシュ更新に使用される。
+	*/
 	UDebugSkelMeshComponent*	PreviewMeshComponent;
 
 };
 
+
+
+
+/*! @class		ULiveLinkExtendInstance
+	@brief		FLiveLinkExtendInstanceProxy と ULiveLinkExtendPreviewController の\n
+				動作中継を行う。
+*/
 UCLASS( transient, NotBlueprintable )
 class ULiveLinkExtendInstance
 	: public ULiveLinkInstance
 {
+public:
 	GENERATED_UCLASS_BODY()
 
 public:
@@ -114,3 +103,31 @@ protected:
 };
 
 
+
+
+
+
+
+/*! @class		ULiveLinkExtendInstance
+	@brief		LiveLinkExtendを使用した際のメッシュプレビュー操作
+*/
+UCLASS()
+class ULiveLinkExtendPreviewController
+	: public UPersonaPreviewSceneController
+{
+public:
+	GENERATED_BODY()
+
+		UPROPERTY( EditAnywhere, Category = "Live Link Extend" )
+		FName SubjectName;
+
+	UPROPERTY( EditAnywhere, Category = "Live Link Extend" )
+		bool bEnableCameraSync;
+
+	UPROPERTY( EditAnywhere, NoClear, Category = "Live Link Extend" )
+		TSubclassOf<ULiveLinkRetargetAsset> RetargetAsset;
+
+	virtual void InitializeView( UPersonaPreviewSceneDescription* SceneDescription, IPersonaPreviewScene* PreviewScene ) const;
+	virtual void UninitializeView( UPersonaPreviewSceneDescription* SceneDescription, IPersonaPreviewScene* PreviewScene ) const;
+
+};

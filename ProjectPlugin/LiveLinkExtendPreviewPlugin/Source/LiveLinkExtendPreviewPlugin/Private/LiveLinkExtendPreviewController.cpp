@@ -1,4 +1,9 @@
-
+﻿
+/*! @file		LiveLinkExtendPreviewController.cpp
+	@brief		LiveLinkExtendを使用した際のメッシュプレビュー中の挙動 
+	@details	LiveLinkPreviewController.cpp をもとにした実装となっており、\n
+				カメラの画角とメッシュ更新が拡張されております。
+*/
 
 
 #include "LiveLinkExtendPreviewController.h"
@@ -29,43 +34,69 @@
 #include "Serialization/MemoryReader.h"
 
 
-const FName EditorCamera ( TEXT( "EditorActiveCamera" ) );
-const FName EditorCameraMetaData_FOV( TEXT( "fov" ) );
-const FName EditorMesh_MetaData_MeshSyncData( TEXT( "mesh_sync_data" ) );
-const FName EditorMesh_MetaData_SendTime( TEXT( "send_time" ) );
+const FName EditorCamera( "EditorActiveCamera" );
+const FName EditorCameraMetaData_FOV( "fov" );
+const FName EditorMesh_MetaData_MeshSyncData( "mesh_sync_data" );
+const FName EditorMesh_MetaData_SendTime( "send_time" );
 
 
+/*------- ↓ 作業用データ ↓ ------- {{{ */
 
-struct MorphDeltaPosition
-{
-	MorphDeltaPosition()
-		: VertexIndex( 0 )
-	{}
+	/*! @struct		MorphDeltaPosition
+		@brief		１頂点ごとのモーフターゲットの移動量
+	*/
+	struct MorphDeltaPosition
+	{
+		MorphDeltaPosition()
+			: VertexIndex( 0 )
+		{}
 
-	MorphDeltaPosition(
-		const FVector&	position,
-		uint32			vertexIndex
-	)
-		: Position		( position )
-		, VertexIndex	( vertexIndex )
-	{}
+		MorphDeltaPosition(
+			const FVector&	position,
+			uint32			vertexIndex
+		)
+			: Position		( position )
+			, VertexIndex	( vertexIndex )
+		{}
 
-	FVector		Position;
-	uint32		VertexIndex;
+		FVector		Position;
+		uint32		VertexIndex;
+	};
+
+	/*! @struct		MorphData
+		@brief		１モーフターゲットの作成内容
+	*/
+	struct MorphData
+	{
+
+		MorphData()
+			: MorphTarget( nullptr )
+		{}
+
+		UMorphTarget*					MorphTarget;
+		TArray< MorphDeltaPosition >	DeltaPositionList;
 };
 
-struct MorphData
+/*------- ↑ 作業用データ ↑ ------- }}} */
+
+
+
+
+
+
+FLiveLinkExtendInstanceProxy::FLiveLinkExtendInstanceProxy()
+	: PreviewMeshComponent( nullptr )
 {
+}
 
-	MorphData()
-		: MorphTarget( nullptr )
-	{}
+FLiveLinkExtendInstanceProxy::FLiveLinkExtendInstanceProxy( UAnimInstance* InAnimInstance )
+	: FLiveLinkInstanceProxy( InAnimInstance )
+	, PreviewMeshComponent( nullptr )
+{
+}
 
-	UMorphTarget*					MorphTarget;
-	TArray< MorphDeltaPosition >	DeltaPositionList;
-};
-
-
+FLiveLinkExtendInstanceProxy::~FLiveLinkExtendInstanceProxy()
+{}
 
 void	FLiveLinkExtendInstanceProxy::Initialize( UAnimInstance* InAnimInstance )
 {
@@ -76,7 +107,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 {
 	auto ret = FLiveLinkInstanceProxy::Evaluate( Output );
 
-	ILiveLinkClient* client = this->ClientRef.GetClient();
+	ILiveLinkClient* client = this->clientRef_.GetClient();
 	IMeshUtilities& MeshUtilities = FModuleManager::Get().LoadModuleChecked<IMeshUtilities>( "MeshUtilities" );
 	if( 
 		client &&
@@ -93,13 +124,14 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 			frame
 		)
 		{
-			auto meshSyncBase64 = frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_MeshSyncData );
-			auto sendTime = frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_SendTime );
+			auto meshSyncBase64	= frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_MeshSyncData );
+			auto sendTime		= frame->MetaData.StringMetaData.Find( EditorMesh_MetaData_SendTime );
 			FDateTime semdTimeStamp;
 
 			TArray<uint8> meshSyncBuffer;
 
 			if( 
+				// DCCツールとの連携はBase64化された FLiveLinkExtendSyncData バイナリを使用する
 				meshSyncBase64 &&
 				FBase64::Decode( *meshSyncBase64, meshSyncBuffer ) &&
 				FDateTime::ParseIso8601( **sendTime, semdTimeStamp )
@@ -109,7 +141,10 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 				FLiveLinkExtendSyncData syncData;
 				syncData << readBuffer;
-				if( this->lastReceiveTime_ < semdTimeStamp )
+				if( 
+					// 送信データのタイムスタンプにて更新の必要を判断
+					this->lastReceiveTime_ < semdTimeStamp 
+				)
 				{
 					this->lastReceiveTime_ = semdTimeStamp;
 
@@ -117,6 +152,8 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 					{
 						skeltalMesh->UnregisterAllMorphTarget();
 					}
+
+					skeltalMesh->bHasVertexColors = 0;
 
 					TArray<FVector>			lodPoints;
 					TArray<FMeshWedge>		lodWedges;
@@ -164,11 +201,31 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 							TArray<FVector2D>	faceIndexUVs;
 							TArray<uint32>		faceInSmoothingGroupIndexList;
 
+							if( mesh.NumUseColors > 0 )
+							{
+								skeltalMesh->bHasVertexColors = 1;
+							}
+
 							for( const auto& materialGroup : mesh.MaterialGroupList )
 							{
-								if( materialGroup.MaterialName == material.MaterialSlotName.ToString() )
+
+								bool sameMaterial = false;
+								{
+									// セクションのマテリアル名と同一名のメッシュグループデータからメッシュ構築を行う
+									if( materialGroup.MaterialName == material.MaterialSlotName.ToString() )
+									{
+										sameMaterial = true;
+									}
+									else if( materialGroup.MaterialName == material.MaterialInterface->GetName() )
+									{
+										sameMaterial = true;
+									}
+								}
+
+								if( sameMaterial )
 								{
 									{
+										// ボーンから各頂点の影響を取り出し
 										const auto& boneList = skeltalMesh->RefSkeleton.GetRawRefBoneInfo();
 										auto numSkinBondes = mesh.SkinNameList.Num();
 
@@ -204,6 +261,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														auto weight = skinObj.SkinWeight;
 														if( weight < 0.1 )
 														{
+															// 低すぎる比率のボーン影響を与えると 頂点フォーマットから精度落ちしてしまうため回避
 															continue;
 														}
 
@@ -234,6 +292,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 										}
 										else
 										{
+											// 頂点数が一致しない場合にはルートか参照メッシュそのものをスキンの参照元とする
 											int boneIndex = 0;
 											for( int iBone = 0; iBone < boneList.Num(); ++iBone )
 											{
@@ -258,6 +317,8 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 									for( const auto& polygon : materialGroup.PolygonList )
 									{
+										// ポリゴン形成
+
 										auto numVertices		= polygon.VertexIndexList.Num();
 										for( int iFace = 0; iFace < numVertices; iFace+=3 )
 										{
@@ -271,18 +332,25 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 												polygonIndexList.Add( vertexIndex );
 
 												FMeshWedge wedge;
+												FMemory::Memset( &wedge, 0, sizeof( wedge ) );
 												wedge.iVertex	= vertexIndex + currentVertexBase;
 												wedge.Color		= FColor::White;
 
-												const auto& colorObj = polygon.ColorList0[ iFace + iTriangle ];
+												if( mesh.NumUseColors > 0 )
 												{
-													wedge.Color.R = ( uint8 )( colorObj.X * 255.0 );
-													wedge.Color.G = ( uint8 )( colorObj.Y * 255.0 );
-													wedge.Color.B = ( uint8 )( colorObj.Z * 255.0 );
-													wedge.Color.A = ( uint8 )( colorObj.W * 255.0 );
+													const auto& colorObj = polygon.ColorList0[ iFace + iTriangle ];
+													{
+														wedge.Color.R = ( uint8 )( colorObj.X * 255.0 );
+														wedge.Color.G = ( uint8 )( colorObj.Y * 255.0 );
+														wedge.Color.B = ( uint8 )( colorObj.Z * 255.0 );
+														wedge.Color.A = ( uint8 )( colorObj.W * 255.0 );
+													}
 												}
 
-												if( polygon.UVList0.Num() > 0 )
+												if( 
+													mesh.NumUseUVs >= 1 &&
+													polygon.UVList0.Num() > 0 
+												)
 												{
 													const auto& uvObject = polygon.UVList0[ iFace + iTriangle ];
 													{
@@ -290,7 +358,10 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														wedge.UVs[ 0 ].Y = 1.0f - uvObject.Y;
 													}
 												}
-												if( polygon.UVList1.Num() > 0 )
+												if( 
+													mesh.NumUseUVs >= 2 &&
+													polygon.UVList1.Num() > 0 
+												)
 												{
 													const auto& uvObject = polygon.UVList1[ iFace + iTriangle ];
 													{
@@ -298,7 +369,10 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														wedge.UVs[ 1 ].Y = 1.0f - uvObject.Y;
 													}
 												}
-												if( polygon.UVList2.Num() > 0 )
+												if(
+													mesh.NumUseUVs >= 3 &&
+													polygon.UVList2.Num() > 0 
+												)
 												{
 													const auto& uvObject = polygon.UVList2[ iFace + iTriangle ];
 													{
@@ -306,7 +380,10 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 														wedge.UVs[ 2 ].Y = 1.0f - uvObject.Y;
 													}
 												}
-												if( polygon.UVList3.Num() > 0 )
+												if( 
+													mesh.NumUseUVs >= 4 &&
+													polygon.UVList3.Num() > 0 
+												)
 												{
 													const auto& uvObject = polygon.UVList3[ iFace + iTriangle ];
 													{
@@ -362,6 +439,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 									auto numMorph = mesh.MorphList.Num();
 									if( numMorph > 0 )
 									{
+										// モーフターゲットの頂点対応のみ取り出しておく
 										for( int iMorph = 0; iMorph < numMorph; ++iMorph )
 										{
 											const auto& morphObject = mesh.MorphList[ iMorph ];
@@ -404,6 +482,8 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 
 						if( !findUpdateMesh )
 						{
+							// セクションに対応するメッシュデータが存在しない場合は、
+							// セクション内のデータから同一のデータを再生成させるように
 							int currentVertexBase = lodPoints.Num();
 							int numVertex = section.SoftVertices.Num();
 
@@ -475,7 +555,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 					TArray<FText> warningMessages;
 					TArray<FName> warningNames;
 
-					bool bBuildSuccess = 
+					bool buildSuccess = 
 						MeshUtilities.BuildSkeletalMesh( 
 							model->LODModels[0],
 							skeltalMesh->RefSkeleton, 
@@ -483,12 +563,13 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 							buildOptions,
 							&warningMessages, &warningNames
 						);
-					if( bBuildSuccess )
+					if( buildSuccess )
 					{
 						{
 							auto numMorphTargets = morphDataMap.Num();
 							if( numMorphTargets > 0 )
 							{
+								// skeltalMeshの頂点バッファ用にdeltaを構築して、モーフターゲットを適応
 								for( const auto& morphDataPair : morphDataMap )
 								{
 									TArray< FMorphTargetDelta > deltaDataList;
@@ -511,32 +592,6 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 											}
 										}
 									}
-
-									/*
-									TArray<FVector> baseNormalList;
-									baseNormalList.Reserve( numVertexList );
-									MeshUtilities.CalculateNormals(
-										morphedPointList, polygonIndexList,
-										faceIndexUVs, faceInSmoothingGroupIndexList,
-										ETangentOptions::BlendOverlappingNormals | ETangentOptions::UseMikkTSpace,
-										baseNormalList
-									);
-
-									TArray<FVector> morphedNormalList;
-									morphedNormalList.Reserve( numVertexList );
-									MeshUtilities.CalculateNormals(
-										morphedPointList, polygonIndexList,
-										faceIndexUVs, faceInSmoothingGroupIndexList,
-										ETangentOptions::BlendOverlappingNormals | ETangentOptions::UseMikkTSpace,
-										morphedNormalList
-									);
-
-									for( int iVertex = 0; iVertex < numVertexList; ++iVertex )
-									{
-										morphTargetDeltas[ iVertex ].TangentZDelta = morphedNormalList[ iVertex ] - baseNormalList[ iVertex ];
-									}
-									*/
-
 									morphDataPair.Value.MorphTarget->PopulateDeltas(
 										deltaDataList,
 										0, model->LODModels[ 0 ].Sections,
@@ -547,9 +602,19 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 										skeltalMesh->RegisterMorphTarget( morphDataPair.Value.MorphTarget );
 									}
 								}
-
 								skeltalMesh->ReleaseResources();
 							}
+						}
+
+						{
+							// バウンドの更新
+							FBox boundingBox( lodPoints.GetData(), lodPoints.Num() );
+							FBox workBox = boundingBox;
+							FVector midMesh = 0.5f*( workBox.Min + workBox.Max );
+							boundingBox.Min = workBox.Min + 1.0f*( workBox.Min - midMesh );
+							boundingBox.Max = workBox.Max + 1.0f*( workBox.Max - midMesh );
+
+							skeltalMesh->SetImportedBounds( FBoxSphereBounds( boundingBox ) );
 						}
 						
 						skeltalMesh->PostEditChange();
@@ -568,20 +633,11 @@ void	FLiveLinkExtendInstanceProxy::UpdateAnimationNode( float DeltaSeconds )
 }
 
 
-ULiveLinkExtendInstance::ULiveLinkExtendInstance( const FObjectInitializer& Initializer )
-	: Super( Initializer )
-{
-
-}
-
-FAnimInstanceProxy* ULiveLinkExtendInstance::CreateAnimInstanceProxy()
-{
-	return new FLiveLinkExtendInstanceProxy( this );
-}
 
 
-
-
+/*! @class		FLiveLinkExtendCameraController
+	@brief		カメラへ同期への操作
+*/
 class FLiveLinkExtendCameraController 
 	: public FEditorCameraController
 {
@@ -589,6 +645,11 @@ class FLiveLinkExtendCameraController
 
 public:
 
+
+	/*! @brief	カメラ同期への反映
+		@note	FLiveLinkCameraControllerでの挙動とは異なり、\n
+				画角設定を行う
+	*/
 	virtual void UpdateSimulation(
 		const FCameraControllerUserImpulseData& UserImpulseData,
 		const float DeltaTime,
@@ -623,6 +684,33 @@ public:
 	}
 	
 };
+
+
+
+
+
+
+
+
+
+ULiveLinkExtendInstance::ULiveLinkExtendInstance( const FObjectInitializer& Initializer )
+	: Super( Initializer )
+{
+}
+
+FAnimInstanceProxy* ULiveLinkExtendInstance::CreateAnimInstanceProxy()
+{
+	return new FLiveLinkExtendInstanceProxy( this );
+}
+
+
+
+
+
+
+
+
+
 
 void ULiveLinkExtendPreviewController::InitializeView(UPersonaPreviewSceneDescription* SceneDescription, IPersonaPreviewScene* PreviewScene) const
 {
