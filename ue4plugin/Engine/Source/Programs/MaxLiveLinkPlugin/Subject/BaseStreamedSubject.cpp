@@ -180,19 +180,12 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 	const auto& invFrontZMatrix		= FMaxLiveLink::GetInvertFrontZMatrix();
 	const auto& frontXRootMatrix	= FMaxLiveLink::GetFrontXRootMatrix();
 
-
-	Matrix3 parentMtx		= MaxIdentityMatrix;
-	Matrix3 transformMatrix	= MaxIdentityMatrix;
-
 	Interface14* interFace = GetCOREInterface14();
 
 	bool isRootNode = false;
 
 	if( node )
 	{
-		transformMatrix = node->GetObjTMAfterWSM( timeValue, nullptr );
-
-		auto name = node->GetName();
 		auto parentNode = node->GetParentNode();
 		if( parentNode )
 		{
@@ -229,51 +222,27 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					}
 				}
 			}
-			parentMtx = parentNode->GetObjTMAfterWSM( timeValue );
 		}
-		else
-		{
-			isRootNode = true;
-		}
-	}
-
-	if( frontAxisX )
-	{
-		transformMatrix = ( transformMatrix * invFrontZMatrix ) * frontXMatrix;
-		transformMatrix = frontXRootMatrix * transformMatrix;
-	}
-
-	if( !isRootNode )
-	{
-		// ルートに配置されたノードでなければ、親行列の影響を外す
-		if( frontAxisX )
-		{
-			parentMtx = frontXRootMatrix * ( ( parentMtx * invFrontZMatrix ) * frontXMatrix );
-		}
-
-		parentMtx.Invert();
-		transformMatrix = transformMatrix * parentMtx;
 	}
 	FQuat	rotateValue			= FQuat::Identity;
 	FVector scaleValue			= FVector::OneVector;
 	FVector translationValue	= FVector::ZeroVector;
 
 	Interval interval( timeValue, timeValue );
-
-	auto unitScale = GetMasterScale( GetUSDefaultUnit() );
-	
 	
 	AffineParts affine;
-	decomp_affine( transformMatrix, &affine );
+	affine.t = Point3( 0, 0, 0 );
+	affine.k = Point3( 1, 1, 1 );
+	affine.q = Quat( 0.0f, 0.0f, 0.0f, 1.0f );
+	affine.u = Quat( 0.0f, 0.0f, 0.0f, 1.0f );
+	affine.f = 1.0f;
 
 	if( node )
 	{
 		auto tmController = node->GetTMController();
-		if( tmController && 0 )
+		if( tmController )
 		{
 			// アニメーションコントローラ（タイムライン）を使用する場合の例
-
-			AffineParts affine2 = affine;
 			{
 				auto scaleController = tmController->GetScaleController();
 				if( scaleController )
@@ -282,8 +251,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerX )
 					{
 						controllerX->GetValue(
-							timeValue, &affine2.k.x,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.k.x,
+							interval
 						);
 					}
 
@@ -291,8 +260,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerY )
 					{
 						controllerY->GetValue(
-							timeValue, &affine2.k.y,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.k.y,
+							interval
 						);
 					}
 
@@ -300,8 +269,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerZ )
 					{
 						controllerZ->GetValue(
-							timeValue, &affine2.k.z,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.k.z,
+							interval
 						);
 					}
 				}
@@ -314,8 +283,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerX )
 					{
 						controllerX->GetValue(
-							timeValue, &affine2.t.x,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.t.x,
+							interval
 						);
 					}
 
@@ -323,8 +292,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerY )
 					{
 						controllerY->GetValue(
-							timeValue, &affine2.t.y,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.t.y,
+							interval
 						);
 					}
 
@@ -332,8 +301,8 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					if( controllerZ )
 					{
 						controllerZ->GetValue(
-							timeValue, &affine2.t.z,
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							timeValue, &affine.t.z,
+							interval
 						);
 					}
 				}
@@ -342,17 +311,13 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 				auto rotationController = tmController->GetRotationController();
 				if( rotationController )
 				{
-					float eularXYZ[3];
-					affine2.q.GetEuler( &eularXYZ[ 0 ], &eularXYZ[ 1 ], &eularXYZ[ 2 ] );
-
-					float eularXYZ2[ 3 ] = { eularXYZ[0], eularXYZ[ 1 ], eularXYZ[ 2 ] };
-
+					float eularXYZ[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 					auto controllerX = rotationController->GetXController();
 					if( controllerX )
 					{
 						controllerX->GetValue(
 							timeValue, &eularXYZ[ 0 ],
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							interval
 						);
 					}
 
@@ -361,7 +326,7 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					{
 						controllerY->GetValue(
 							timeValue, &eularXYZ[ 1 ],
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							interval
 						);
 					}
 
@@ -370,49 +335,104 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 					{
 						controllerZ->GetValue(
 							timeValue, &eularXYZ[ 2 ],
-							interval, GetSetMethod::CTRL_ABSOLUTE
+							interval
 						);
 					}
 
-					affine2.q.SetEuler( eularXYZ[ 0 ], eularXYZ[ 1 ], eularXYZ[ 2 ] );
-
-					Matrix3 srtm, rtm, ptm, stm, ftm;
-					ptm.IdentityMatrix();
-					ptm.SetTrans( affine2.t );
-					affine2.q.MakeMatrix( rtm );
-					affine2.u.MakeMatrix( srtm );
-					stm = ScaleMatrix( affine2.k );
-					ftm = ScaleMatrix( Point3( affine2.f, affine2.f, affine2.f ) );
-					Matrix3 resultLocalMtx = Inverse( srtm ) * stm * srtm * rtm * ftm * ptm;
-
-					if( isRootNode )
+					int rotateEulerType = EULERTYPE_XYZ;
 					{
-						resultLocalMtx *= node->GetParentTM( timeValue );
+						auto eulerControl = static_cast<IEulerControl*>( rotationController->GetInterface( I_EULERCTRL ) );
+						if( eulerControl )
+						{
+							rotateEulerType = eulerControl->GetOrder();
+						}
 					}
-					decomp_affine( resultLocalMtx, &affine2 );
-					affine = affine2;
+					switch( rotateEulerType )
+					{
+					default:
+					case EULERTYPE_XYZ:
+						{
+							Quat q;
+							q.SetEuler( eularXYZ[ 0 ], eularXYZ[ 1 ], eularXYZ[ 2 ] );
+							affine.q = q;
+						}break;
+					case EULERTYPE_ZXY:
+						{
+							Quat q;
+							q.SetEuler( eularXYZ[ 1 ], eularXYZ[ 0 ], eularXYZ[ 2 ] );
+							affine.q.x = q.y;
+							affine.q.y = q.x;
+							affine.q.z = q.z;
+							affine.q.w = q.w;
+						}break;
+					}
+				}
+			}
+
+			Matrix3 parentMtx		= MaxIdentityMatrix;
+			{
+				Matrix3 srtm, rtm, ptm, stm, ftm;
+				ptm.IdentityMatrix();
+				ptm.SetTrans( affine.t );
+				affine.q.MakeMatrix( rtm );
+				affine.u.MakeMatrix( srtm );
+				stm = ScaleMatrix( affine.k );
+				ftm = ScaleMatrix( Point3( affine.f, affine.f, affine.f ) );
+				Matrix3 resultLocalMtx = Inverse( srtm ) * stm * srtm * rtm * ftm * ptm;
+
+				if( node->GetParentNode() )
+				{
+					parentMtx = node->GetParentNode()->GetObjTMAfterWSM( timeValue );
+				}
+				if( isRootNode )
+				{
+					if( frontAxisX )
+					{
+						parentMtx = frontXRootMatrix * ( ( parentMtx * invFrontZMatrix ) * frontXMatrix );
+					}
+					resultLocalMtx *= parentMtx;
+				}
+				else
+				{
+					if( frontAxisX )
+					{
+						resultLocalMtx	= resultLocalMtx * parentMtx;
+
+
+						resultLocalMtx = ( resultLocalMtx * invFrontZMatrix ) * frontXMatrix;
+						resultLocalMtx = frontXRootMatrix * resultLocalMtx;
+
+						parentMtx		= frontXRootMatrix * ( ( parentMtx * invFrontZMatrix ) * frontXMatrix );
+						parentMtx.Invert();
+
+						resultLocalMtx = resultLocalMtx * parentMtx;
+					}
+				}
+
+				decomp_affine( resultLocalMtx, &affine );
+			}
+
+			{
+				{
+					rotateValue.X	= affine.q.x;
+					rotateValue.Y	=-affine.q.y;
+					rotateValue.Z	= affine.q.z;
+					rotateValue.W	= affine.q.w;
+				}
+				{
+					scaleValue.X	= affine.k.x;
+					scaleValue.Y	= affine.k.y;
+					scaleValue.Z	= affine.k.z;
+				}
+				{
+					translationValue.X		= affine.t.x;
+					translationValue.Y		=-affine.t.y;
+					translationValue.Z		= affine.t.z;
 				}
 			}
 		}
 	}
-	{
-		{
-			rotateValue.X	= affine.q.x;
-			rotateValue.Y	=-affine.q.y;
-			rotateValue.Z	= affine.q.z;
-			rotateValue.W	= affine.q.w;
-		}
-		{
-			scaleValue.X	= affine.k.x;
-			scaleValue.Y	= affine.k.y;
-			scaleValue.Z	= affine.k.z;
-		}
-		{
-			translationValue.X		= affine.t.x;
-			translationValue.Y		=-affine.t.y;
-			translationValue.Z		= affine.t.z;
-		}
-	}
+	
 	return FTransform(
 		rotateValue,
 		translationValue,

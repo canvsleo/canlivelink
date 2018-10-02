@@ -204,9 +204,6 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 			{
 				continue;
 			}
-
-			
-
 			auto material = node->GetMtl();
 
 			ISkin*		skinObject	= nullptr;

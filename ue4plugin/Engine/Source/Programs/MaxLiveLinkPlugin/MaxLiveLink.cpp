@@ -170,19 +170,29 @@ private:
 		// UI操作
 		, windowHandle_( nullptr )
 		, editViewCameraSubject_( nullptr )
+
 		, buttonAddSubject_( nullptr )
 		, buttonRemoveSubject_( nullptr )
+
 		, textSubjectName_( nullptr )
 		, listSubject_( nullptr )
+
+		, useForceFrontX_Cache_( true )
+		, useAutomaticSyncMesh_Cache_( false )
+
 		, buttonSendMesh_( nullptr )
+
 		, numUnitScale_( nullptr )
-			, unitScale_Cache_( 100.0f )
+			, unitScale_Cache_( 1.0f )
 		, numVertexUVs_( nullptr )
 			, vertexUVs_Cache_( 1 )
 		, numVertexColors_( nullptr )
 			, vertexColors_Cache_( 1 )
-		, useForceFrontX_Cache_( true )
-		, useAutomaticSyncMesh_Cache_( false )
+
+		, bindPoseFrameType_( BindPoseFrameType_FirstFrame )
+		, numBindPoseFrame_( nullptr )
+			, numBindPoseFrame_Cache_( 0 )
+		
 		// 更新受け取りと送信
 		, lastViewID_( -1 )
 	{
@@ -372,6 +382,16 @@ private:
 				this->buttonSendMesh_->SetText( TEXT( "Send Mesh" ) );
 			}
 
+			CheckDlgButton(
+				this->windowHandle_, IDC_CHECK_ForceFrontX,
+				this->useForceFrontX_Cache_ ? BST_CHECKED: BST_UNCHECKED
+			);
+
+			CheckDlgButton(
+				this->windowHandle_, IDC_CHECK_AutomaticSyncMesh,
+				this->useAutomaticSyncMesh_Cache_ ? BST_CHECKED: BST_UNCHECKED
+			);
+
 			this->numUnitScale_	= GetISpinner( GetDlgItem( this->windowHandle_, IDC_NUMERIC_UnitScale ) );
 			if( this->numUnitScale_ )
 			{
@@ -403,15 +423,38 @@ private:
 				this->numVertexColors_->LinkToEdit( GetDlgItem( this->windowHandle_, IDC_NUMERIC_NumVertexColors_Text ), EDITTYPE_INT );
 			}
 
-			CheckDlgButton( 
-				this->windowHandle_, IDC_CHECK_ForceFrontX, 
-				this->useForceFrontX_Cache_ ? BST_CHECKED: BST_UNCHECKED 
-			);
+			
 
-			CheckDlgButton(
-				this->windowHandle_, IDC_CHECK_AutomaticSyncMesh,
-				this->useAutomaticSyncMesh_Cache_ ? BST_CHECKED: BST_UNCHECKED
-			);
+			{
+				auto selectedButton = IDC_RADIO_BindPose_FirstFrame;
+				switch( this->bindPoseFrameType_ )
+				{
+				default:
+				case BindPoseFrameType_FirstFrame:
+					{
+						selectedButton = IDC_RADIO_BindPose_FirstFrame;
+					}break;
+				case BindPoseFrameType_SelectFrame:
+					{
+						selectedButton = IDC_RADIO_BindPose_SelectFrame;
+					}break;
+				}
+				CheckRadioButton(
+					this->windowHandle_,
+					IDC_RADIO_BindPose_FirstFrame,
+					IDC_RADIO_BindPose_SelectFrame,
+					selectedButton
+				);
+
+				this->numBindPoseFrame_	= GetISpinner( GetDlgItem( this->windowHandle_, IDC_NUMERIC_BindPoseFrame ) );
+				if( this->numBindPoseFrame_ )
+				{
+					this->numBindPoseFrame_->SetScale( 1 );
+					this->numBindPoseFrame_->SetResetValue( 1 );
+					this->numBindPoseFrame_->SetValue( this->numBindPoseFrame_Cache_, 0 );
+					this->numBindPoseFrame_->LinkToEdit( GetDlgItem( this->windowHandle_, IDC_NUMERIC_BindPoseFrame_Text ), EDITTYPE_INT );
+				}
+			}
 
 			{
 				SendMessageW( this->listSubject_, LB_RESETCONTENT, 0, 0 );
@@ -430,6 +473,25 @@ private:
 			this->useForceFrontX_Cache_				= this->UseForceFrontAxisX();
 			this->useAutomaticSyncMesh_Cache_		= this->UseAutomaticSyncMesh();
 
+
+			{
+				this->bindPoseFrameType_	= BindPoseFrameType_FirstFrame;
+				if( IsDlgButtonChecked( this->windowHandle_, IDC_RADIO_BindPose_FirstFrame ) )
+				{
+					this->bindPoseFrameType_	= BindPoseFrameType_FirstFrame;
+				}
+				else if( IsDlgButtonChecked( this->windowHandle_, IDC_RADIO_BindPose_SelectFrame ) )
+				{
+					this->bindPoseFrameType_	= BindPoseFrameType_SelectFrame;
+				}
+			}
+
+			if( this->numBindPoseFrame_ )
+			{
+				this->numBindPoseFrame_Cache_ = this->numBindPoseFrame_->GetIVal();
+				ReleaseISpinner( this->numBindPoseFrame_ );
+				this->numBindPoseFrame_ = nullptr;
+			}
 
 			if( this->numVertexColors_ )
 			{
@@ -977,8 +1039,34 @@ private:
 		*/
 		TimeValue	FMaxLiveLink::GetBindPoseTime() const
 		{
-			auto range = this->interface_->GetAnimRange();
-			return range.Start();
+			auto frameType	= this->bindPoseFrameType_;
+			if( IsDlgButtonChecked( this->windowHandle_, IDC_RADIO_BindPose_FirstFrame ) )
+			{
+				frameType	= BindPoseFrameType_FirstFrame;
+			}
+			else if( IsDlgButtonChecked( this->windowHandle_, IDC_RADIO_BindPose_SelectFrame ) )
+			{
+				frameType	= BindPoseFrameType_SelectFrame;
+			}
+
+			switch( frameType )
+			{
+			default:
+			case BindPoseFrameType_FirstFrame:
+				{
+					auto range = this->interface_->GetAnimRange();
+					return range.Start();
+				}
+			case BindPoseFrameType_SelectFrame:
+				{
+					if( !this->numBindPoseFrame_ )
+					{
+						return this->numBindPoseFrame_Cache_;
+					}
+					return this->numBindPoseFrame_->GetIVal();
+				}
+			}
+			
 		}
 
 		/*! @brief		描画の受け取り
@@ -1058,34 +1146,6 @@ private:
 
 
 	/*------- ↓ 汎用行列取得 ↓ ------- {{{ */
-
-
-		const FMatrix	FMaxLiveLink::PointConvertMatrix(
-			FPlane( 1.0f, 0.0f, 0.0f, 0.0f ),
-			FPlane( 0.0f, 0.0f, 1.0f, 0.0f ),
-			FPlane( 0.0f,-1.0f, 0.0f, 0.0f ),
-			FPlane( 0.0f, 0.0f, 0.0f, 1.0f )
-		);
-
-		const FMatrix	FMaxLiveLink::PointConvertMatrixFrontAxisX(
-			FPlane( 0.0f, 1.0f, 0.0f, 0.0f ),
-			FPlane( 0.0f, 0.0f, 1.0f, 0.0f ),
-			FPlane( 1.0f, 0.0f, 0.0f, 0.0f ),
-			FPlane( 0.0f, 0.0f, 0.0f, 1.0f )
-		);
-
-		const FMatrix&	FMaxLiveLink::GetPointConvertMatrix() const
-		{
-			if( this->UseForceFrontAxisX() )
-			{
-				return PointConvertMatrixFrontAxisX;
-			}
-			else
-			{
-				return PointConvertMatrix;
-			}
-		}
-
 
 
 		const Matrix3	FMaxLiveLink::FrontXMatrix(

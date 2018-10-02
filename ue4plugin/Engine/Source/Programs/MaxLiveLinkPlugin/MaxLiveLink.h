@@ -94,6 +94,14 @@
 
 			/*------- ↓ UI操作 ↓ ------- {{{ */
 		
+		public:
+			typedef enum _BindPoseFrameType_
+			{
+				BindPoseFrameType_FirstFrame	= 0,
+				BindPoseFrameType_SelectFrame	= 1
+			}BindPoseFrameType;
+
+
 		private:
 			HWND				windowHandle_;
 			FMaxLiveLinkCameraStreamedSubject*			editViewCameraSubject_;
@@ -105,19 +113,23 @@
 			ICustEdit*			textSubjectName_;
 			HWND				listSubject_;
 				
+			bool useForceFrontX_Cache_;
+			bool useAutomaticSyncMesh_Cache_;
 
-			ICustButton*		buttonSendMesh_;
 			ISpinnerControl*	numUnitScale_;
 				float				unitScale_Cache_;
 
+			ICustButton*		buttonSendMesh_;
 
 			ISpinnerControl*	numVertexUVs_;
 				int					vertexUVs_Cache_;
 			ISpinnerControl*	numVertexColors_;
 				int					vertexColors_Cache_;
 
-			bool useForceFrontX_Cache_;
-			bool useAutomaticSyncMesh_Cache_;
+			BindPoseFrameType	bindPoseFrameType_;
+
+			ISpinnerControl*	numBindPoseFrame_;
+				int					numBindPoseFrame_Cache_;
 			
 
 		public:
@@ -159,6 +171,13 @@
 			int		GetNumUseUVs() const;
 			//! 使用するカラーの数を取得
 			int		GetNumUseColors() const;
+			//----------------------------------------------------------
+
+
+			//----------------------------------------------------------
+			BindPoseFrameType		GetBindPoseFrameType() const;
+
+			int						GetBindPoseFrame() const;
 			//----------------------------------------------------------
 
 			//----------------------------------------------------------
@@ -292,11 +311,6 @@
 			/*------- ↓ 汎用行列取得 ↓ ------- {{{ */
 			
 		public:
-
-			static const FMatrix	PointConvertMatrix;
-			static const FMatrix	PointConvertMatrixFrontAxisX;
-
-			const FMatrix&	GetPointConvertMatrix() const;
 
 			static const Matrix3	FrontXMatrix;
 			static const Matrix3&	GetFrontXMatrix();
