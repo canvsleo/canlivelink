@@ -369,8 +369,13 @@ FTransform	FMaxLiveLinkBaseStreamedSubject::GetSubjectTransform(
 				}
 			}
 
-			Matrix3 parentMtx		= MaxIdentityMatrix;
+			if(
+				isRootNode ||
+				frontAxisX
+			)
 			{
+				Matrix3 parentMtx		= MaxIdentityMatrix;
+
 				Matrix3 srtm, rtm, ptm, stm, ftm;
 				ptm.IdentityMatrix();
 				ptm.SetTrans( affine.t );
