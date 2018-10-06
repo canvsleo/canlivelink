@@ -56,7 +56,7 @@ TArray<ISkin*>		FMaxLiveLinkSkinMeshesStreamedSubject::GetSkinList() const
 		{
 			continue;
 		}
-		auto derivedObject	= reinterpret_cast<IDerivedObject*>( node.ReferencedNode->GetObjectRef() );
+		auto derivedObject	= FMaxLiveLink::ObjectToDerivedObject( node.ReferencedNode->GetObjectRef() );
 		if( !derivedObject )
 		{
 			continue;
@@ -172,6 +172,7 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 	const auto& invFrontZMatrix		= FMaxLiveLink::GetInvertFrontZMatrix();
 	const auto& frontXRootMatrix	= FMaxLiveLink::GetFrontXRootMatrix();
 
+	auto unitScale = this->livelinkReference_->GetUnitScale();
 	{
 		for( int iNode = 0; iNode < this->nodeList_.Num(); ++iNode )
 		{
@@ -204,39 +205,68 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 			{
 				continue;
 			}
+
+			
+			auto bindPoseMatrix = node->GetObjTMAfterWSM( this->livelinkReference_->GetBindPoseTime(), nullptr );
+			bindPoseMatrix.NoScale();
+			if( this->livelinkReference_->UseForceFrontAxisX() )
+			{
+				bindPoseMatrix = ( bindPoseMatrix * invFrontZMatrix ) * frontXMatrix;
+			}
+
+
+			{
+				auto bindPoseTransform =
+					GetSubjectTransformFromSeconds(
+						node, TicksToSec( this->livelinkReference_->GetBindPoseTime() ),
+						this->livelinkReference_->UseForceFrontAxisX(),
+						nodeReference.ParentIndexCache == ParentIndex_None
+					);
+				syncMeshData.BoneBindPoseList.Add(
+					FLiveLinkExtendBoneBindPose(
+						nodeName.ToString(),
+						bindPoseTransform
+					)
+				);
+			}
+			
+
 			auto material = node->GetMtl();
 
 			ISkin*		skinObject	= nullptr;
 			MorphR3*	morphObject	= nullptr;
 			{
-				auto deriverdObj	= reinterpret_cast<IDerivedObject*>( obj );
-				int numModifier = deriverdObj->NumModifiers();
-				for( int iModifier = 0; iModifier < numModifier; ++iModifier )
+				auto deriverdObj	= FMaxLiveLink::ObjectToDerivedObject( obj );
+				if( deriverdObj )
 				{
-					auto modifier = deriverdObj->GetModifier( iModifier );
-					if( modifier )
+					int numModifier = deriverdObj->NumModifiers();
+					for( int iModifier = 0; iModifier < numModifier; ++iModifier )
 					{
-
-						auto skin = reinterpret_cast<ISkin*>( modifier->GetInterface( I_SKIN ) );
-						if( skin )
+						auto modifier = deriverdObj->GetModifier( iModifier );
+						if( modifier )
 						{
-							skinObject = skin;
-							ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
-							obj = state.obj;
-							break;
-						}
 
-						if(
-							modifier->SuperClassID() == OSM_CLASS_ID &&
-							modifier->ClassID() == MORPHER_CLASS_ID
-							)
-						{
-							morphObject = static_cast<MorphR3*>( modifier );
+							auto skin = reinterpret_cast<ISkin*>( modifier->GetInterface( I_SKIN ) );
+							if( skin )
+							{
+								skinObject = skin;
+								ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
+								obj = state.obj;
+								break;
+							}
 
-							ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
-							obj = state.obj;
+							if(
+								modifier->SuperClassID() == OSM_CLASS_ID &&
+								modifier->ClassID() == MORPHER_CLASS_ID
+								)
+							{
+								morphObject = static_cast<MorphR3*>( modifier );
 
-							break;
+								ObjectState state = obj->Eval( this->livelinkReference_->GetBindPoseTime() );
+								obj = state.obj;
+
+								break;
+							}
 						}
 					}
 				}
@@ -291,13 +321,6 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 
 					meshData.NumUseUVs		= this->livelinkReference_->GetNumUseUVs();
 					meshData.NumUseColors	= this->livelinkReference_->GetNumUseColors();
-
-					auto bindPoseMatrix = node->GetObjTMAfterWSM( this->livelinkReference_->GetBindPoseTime(), nullptr );
-					bindPoseMatrix.NoScale();
-					if( this->livelinkReference_->UseForceFrontAxisX() )
-					{
-						bindPoseMatrix = ( bindPoseMatrix * invFrontZMatrix ) * frontXMatrix;
-					}
 
 					{
 						for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
@@ -563,14 +586,6 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 				int numFaces		= polyObject->mm.numf;
 				if( numVertexies > 0 && numFaces > 0 )
 				{
-
-					auto bindPoseMatrix = node->GetObjTMAfterWSM( this->livelinkReference_->GetBindPoseTime(), nullptr );
-					bindPoseMatrix.NoScale();
-					if( this->livelinkReference_->UseForceFrontAxisX() )
-					{
-						bindPoseMatrix = ( bindPoseMatrix * invFrontZMatrix ) * frontXMatrix;
-					}
-
 					for( int iVertex = 0; iVertex < numVertexies; ++iVertex )
 					{
 						MNVert* vertex = polyObject->mm.V( iVertex );
@@ -928,6 +943,7 @@ void	FMaxLiveLinkSkinMeshesStreamedSubject::OnStream( double streamTime, int32 f
 				}
 
 				syncMeshData.MeshList.Add( meshData );
+				
 				doMeshSync = true;
 			}
 

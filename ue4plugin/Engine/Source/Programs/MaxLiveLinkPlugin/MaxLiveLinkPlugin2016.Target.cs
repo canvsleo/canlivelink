@@ -1,11 +1,15 @@
-// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
-
 using UnrealBuildTool;
-using System.Collections.Generic;
+using System.IO;
 
-public abstract class MaxLiveLinkPluginTargetBase : TargetRules
+
+public abstract class MaxLiveLinkPluginTargetBase 
+	: TargetRules
 {
-	public MaxLiveLinkPluginTargetBase(TargetInfo Target) : base(Target)
+	public abstract string Get3dsMaxVersion();
+	public abstract string Get3dsMaxBasePath();
+
+	public MaxLiveLinkPluginTargetBase(TargetInfo Target) : 
+		base(Target)
 	{
 		Type = TargetType.Program;
         LinkType = TargetLinkType.Monolithic;
@@ -24,20 +28,45 @@ public abstract class MaxLiveLinkPluginTargetBase : TargetRules
 		bCompileICU = false;
 
         bShouldCompileAsDLL = true;
-        string OutputName = "MaxLiveLinkPlugin2016";
+        string OutputName = "MaxLiveLinkPlugin" + this.Get3dsMaxVersion();
         if (Target.Configuration != UnrealTargetConfiguration.Development)
         {
             OutputName = string.Format("{0}-{1}-{2}", OutputName, Target.Platform, Target.Configuration);
         }
-        PostBuildSteps.Add(string.Format("copy /Y \"$(EngineDir)\\Binaries\\Win64\\{0}.dll\" \"$(EngineDir)\\Binaries\\Win64\\{0}.dlu\" >nul: & echo Copied output to $(EngineDir)\\Binaries\\Win64\\{0}.dlu", OutputName));
-        PostBuildSteps.Add(string.Format("copy /Y \"$(EngineDir)\\Binaries\\Win64\\{0}.*\" \"C:\\Program Files\\Autodesk\\3ds Max 2016\\plugins\\\" >nul: & echo Copied output to $(EngineDir)\\Binaries\\Win64\\{0}.dlu", OutputName));
+        PostBuildSteps.Add(string.Format(
+			"copy /Y \"$(EngineDir)\\Binaries\\Win64\\{0}.dll\" \"$(EngineDir)\\Binaries\\Win64\\{0}.dlu\" >nul: & echo Copied output to $(EngineDir)\\Binaries\\Win64\\{0}.dlu", 
+			OutputName
+		));
+        PostBuildSteps.Add(string.Format(
+			"copy /Y \"$(EngineDir)\\Binaries\\Win64\\{0}.*\" \"{1}\\plugins\\\" >nul: & echo Copied output to $(EngineDir)\\Binaries\\Win64\\{0}.dlu", 
+			OutputName, this.Get3dsMaxBasePath()
+		));
     }
 }
 
-public class MaxLiveLinkPlugin2016Target : MaxLiveLinkPluginTargetBase
+public class MaxLiveLinkPlugin2016Target
+	: MaxLiveLinkPluginTargetBase
 {
-	public MaxLiveLinkPlugin2016Target(TargetInfo Target) : base(Target)
+
+	public MaxLiveLinkPlugin2016Target(TargetInfo Target) 
+		: base(Target)
 	{
-		LaunchModuleName = "MaxLiveLinkPlugin2016";
+		LaunchModuleName = 
+			"MaxLiveLinkPlugin" + this.Get3dsMaxVersion()
+			;
 	}
+
+	public override string Get3dsMaxVersion()
+	{
+		return "2016";
+	}
+	public override string Get3dsMaxBasePath()
+	{
+		return string.Format(
+			"C:\\Program Files\\Autodesk\\3ds Max {0}",
+			this.Get3dsMaxVersion()
+		);
+	}
+
+	
 }

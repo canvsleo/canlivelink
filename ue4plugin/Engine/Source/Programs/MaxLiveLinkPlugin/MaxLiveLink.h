@@ -173,13 +173,6 @@
 			int		GetNumUseColors() const;
 			//----------------------------------------------------------
 
-
-			//----------------------------------------------------------
-			BindPoseFrameType		GetBindPoseFrameType() const;
-
-			int						GetBindPoseFrame() const;
-			//----------------------------------------------------------
-
 			//----------------------------------------------------------
 			//! ダイアログコールバック命令の受け取り
 			void	OnReceiveDialogCallbackCommand( WPARAM wParam );
@@ -280,6 +273,11 @@
 			void	UpdateAllSubjectNodeListReference();
 			//----------------------------------------------------------
 
+			//----------------------------------------------------------
+			//! DerivedObjectへの変換
+			static IDerivedObject*		ObjectToDerivedObject( Object* obj );
+			//----------------------------------------------------------
+
 			/*------- ↑ Subject管理 ↑ ------- }}} */
 
 
@@ -311,6 +309,9 @@
 			/*------- ↓ 汎用行列取得 ↓ ------- {{{ */
 			
 		public:
+
+			static Matrix3			ConvertTransform( const FTransform& transform );
+			static FMatrix			ConvertMatrix( const Matrix3& srcMatrix );
 
 			static const Matrix3	FrontXMatrix;
 			static const Matrix3&	GetFrontXMatrix();

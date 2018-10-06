@@ -5,7 +5,15 @@
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
 
-class ILiveLinkExtendPreviewPlugin : public IModuleInterface
+#define LOCTEXT_NAMESPACE "LiveLinkExtendPreviewPlugin"
+
+class FLiveLinkExtendPreviewPlugin : public IModuleInterface
 {
+public:
+
+	virtual void	StartupModule() override;
+	virtual bool	SupportsDynamicReloading() override;
+
 };
 
+#undef LOCTEXT_NAMESPACE

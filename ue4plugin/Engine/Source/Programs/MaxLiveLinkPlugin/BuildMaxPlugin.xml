@@ -15,7 +15,26 @@
 	
 	<Node Name="Stage Max Plugin Module" Requires="Compile Max 2016 Win64">
 		<Copy From="$(LocalBinaryDir)\MaxLiveLinkPlugin2016.dlu" To="$(LocalStagingDir)\MaxLiveLink2016\LiveLink\plug-ins\MaxLiveLinkPlugin2016.dlu" />
-		<Zip FromDir="$(LocalStagingDir)" ZipFile="$(LocalStagingDir)\LiveLinkMax.zip"/>
+		<Zip FromDir="$(LocalStagingDir)" ZipFile="$(LocalStagingDir)\LiveLinkMax2016.zip"/>
 	</Node>
+
+    <Node Name="Compile Max 2019 Win64" Requires="Compile UnrealHeaderTool Win64">
+      <Compile Target="MaxLiveLinkPlugin2019" Platform="Win64" Configuration="Development" />
+    </Node>
+	
+	<Node Name="Stage Max Plugin Module" Requires="Compile Max 2019 Win64">
+		<Copy From="$(LocalBinaryDir)\MaxLiveLinkPlugin2019.dlu" To="$(LocalStagingDir)\MaxLiveLink2019\LiveLink\plug-ins\MaxLiveLinkPlugin2019.dlu" />
+		<Zip FromDir="$(LocalStagingDir)" ZipFile="$(LocalStagingDir)\LiveLinkMax2019.zip"/>
+	</Node>
+
+    <Node Name="Compile Max 2018 Win64" Requires="Compile UnrealHeaderTool Win64">
+      <Compile Target="MaxLiveLinkPlugin2018" Platform="Win64" Configuration="Development" />
+    </Node>
+	
+	<Node Name="Stage Max Plugin Module" Requires="Compile Max 2018 Win64">
+		<Copy From="$(LocalBinaryDir)\MaxLiveLinkPlugin2018.dlu" To="$(LocalStagingDir)\MaxLiveLink2018\LiveLink\plug-ins\MaxLiveLinkPlugin2018.dlu" />
+		<Zip FromDir="$(LocalStagingDir)" ZipFile="$(LocalStagingDir)\LiveLinkMax2018.zip"/>
+	</Node>
+
   </Agent>
 </BuildGraph>

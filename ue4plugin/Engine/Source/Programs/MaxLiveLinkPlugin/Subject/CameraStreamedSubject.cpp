@@ -230,7 +230,7 @@ void FMaxLiveLinkCameraStreamedSubject::OnStreamCamera( double streamTime, int f
 	metaData.SceneTime.FrameRate	= FLiveLinkFrameRate( ( uint32 )( 1.0f / vpt->GetFPS() ), 1 );
 	metaData.SceneTime.Seconds		= ( int32 )( streamTime );
 
-	metaData.StringMetaData.Add( FName( TEXT( "fov" ) ), FString::SanitizeFloat( degFov ) );
+	metaData.StringMetaData.Add( FName( "fov" ), FString::SanitizeFloat( degFov ) );
 
 	this->GetLiveLinkProvider()->UpdateSubjectFrame(
 		this->subjectName_,

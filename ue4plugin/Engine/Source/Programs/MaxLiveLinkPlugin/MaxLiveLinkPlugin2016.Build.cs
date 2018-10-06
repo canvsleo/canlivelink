@@ -1,9 +1,7 @@
-// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
-
 using UnrealBuildTool;
 using System.IO;
-
-public abstract class MaxLiveLinkPluginBase : ModuleRules
+public abstract class MaxLiveLinkPluginBase 
+	: ModuleRules
 {
     public MaxLiveLinkPluginBase(ReadOnlyTargetRules Target) : base(Target)
     {
@@ -32,8 +30,8 @@ public abstract class MaxLiveLinkPluginBase : ModuleRules
         });
 
         {
-			string MaxVersionString = GetMaxVersion();
-			string MaxInstallFolder = @"C:\Program Files\Autodesk\3ds Max " + MaxVersionString + @" SDK\maxsdk";
+			string MaxVersionString = this.Get3dsMaxVersion();
+			string MaxInstallFolder = this.Get3dsMaxBasePath() + @" SDK\maxsdk";
 
 			if( Directory.Exists( MaxInstallFolder ) )
 			{
@@ -72,14 +70,27 @@ public abstract class MaxLiveLinkPluginBase : ModuleRules
 		}
 	}
 	
-	public abstract string GetMaxVersion();
+	public abstract string Get3dsMaxVersion();
+	public abstract string Get3dsMaxBasePath();
 }
 
-public class MaxLiveLinkPlugin2016 : MaxLiveLinkPluginBase
+public class MaxLiveLinkPlugin2016 
+	: MaxLiveLinkPluginBase
 {
-	public MaxLiveLinkPlugin2016(ReadOnlyTargetRules Target) : base(Target)
+	public override string Get3dsMaxVersion()
+	{
+		return "2016";
+	}
+	public override string Get3dsMaxBasePath()
+	{
+		return string.Format(
+			"C:\\Program Files\\Autodesk\\3ds Max {0}",
+			this.Get3dsMaxVersion()
+		);
+	}
+
+	public MaxLiveLinkPlugin2016(ReadOnlyTargetRules Target) 
+		: base(Target)
 	{
 	}
-	
-	public override string GetMaxVersion() { return "2016"; }
 }

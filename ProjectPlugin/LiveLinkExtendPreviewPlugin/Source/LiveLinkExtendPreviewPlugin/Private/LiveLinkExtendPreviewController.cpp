@@ -17,10 +17,6 @@
 #include "IPersonaPreviewScene.h"
 #include "Animation/DebugSkelMeshComponent.h"
 
-#include "PhysicsEngine/BodySetup.h"
-
-#include "PhysXCookHelper.h"
-
 #include "Rendering/SkeletalMeshModel.h"
 #include "Rendering/SkeletalMeshRenderData.h"
 
@@ -116,6 +112,9 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 	)
 	{
 		auto skeltalMesh = this->PreviewMeshComponent->SkeletalMesh;
+
+		
+
 		auto model = skeltalMesh->GetImportedModel();
 		const FLiveLinkSubjectFrame* frame = client->GetSubjectData( this->PoseNode.SubjectName );
 		if( 
@@ -146,11 +145,33 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 					this->lastReceiveTime_ < semdTimeStamp 
 				)
 				{
+
 					this->lastReceiveTime_ = semdTimeStamp;
 
 					if( skeltalMesh->MorphTargets.Num() > 0 )
 					{
 						skeltalMesh->UnregisterAllMorphTarget();
+					}
+
+					if( syncData.BoneBindPoseList.Num() > 0 )
+					{
+						FReferenceSkeletonModifier skeletonModifier( skeltalMesh->RefSkeleton, skeltalMesh->Skeleton );
+
+
+						const auto& boneInfoList = skeltalMesh->RefSkeleton.GetRefBoneInfo();
+						auto numBones = skeltalMesh->RefSkeleton.GetNum();
+						for( int iBone = 0; iBone < numBones; ++iBone )
+						{
+							const auto& boneInfo	= boneInfoList[ iBone ];
+
+							for( const auto& boneBindPose : syncData.BoneBindPoseList )
+							{
+								if( boneInfo.Name.ToString() == boneBindPose.MeshName )
+								{
+									skeletonModifier.UpdateRefPoseTransform( iBone, boneBindPose.BindPose );
+								}
+							}
+						}
 					}
 
 					skeltalMesh->bHasVertexColors = 0;
@@ -605,7 +626,7 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 								skeltalMesh->ReleaseResources();
 							}
 						}
-
+						
 						{
 							// バウンドの更新
 							FBox boundingBox( lodPoints.GetData(), lodPoints.Num() );
@@ -617,7 +638,9 @@ bool	FLiveLinkExtendInstanceProxy::Evaluate( FPoseContext& Output )
 							skeltalMesh->SetImportedBounds( FBoxSphereBounds( boundingBox ) );
 						}
 						
-						skeltalMesh->PostEditChange();
+						FPropertyChangedEvent emptyPropertyUpdateStruct( NULL );
+						//emptyPropertyUpdateStruct.ChangeType = EPropertyChangeType::Interactive;
+						skeltalMesh->PostEditChangeProperty( emptyPropertyUpdateStruct );
 						skeltalMesh->PostLoad();
 					}
 				}

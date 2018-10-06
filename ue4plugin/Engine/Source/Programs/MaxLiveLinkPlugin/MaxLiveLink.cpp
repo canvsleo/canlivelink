@@ -687,7 +687,7 @@ private:
 				auto cID	= currentNode->ClassID();
 				auto scID	= currentNode->SuperClassID();
 
-				auto derivedObject	= reinterpret_cast<IDerivedObject*>( currentNode->GetObjectRef() );
+				auto derivedObject	= FMaxLiveLink::ObjectToDerivedObject( currentNode->GetObjectRef() );
 				if(
 					derivedObject &&
 					( !( collectOption & CollectOptionBits_OnlySelected ) ) ||
@@ -1029,6 +1029,26 @@ private:
 			}
 		}
 
+
+
+		/*! @brief		DerivedObjectへの変換
+		*/
+		IDerivedObject*		FMaxLiveLink::ObjectToDerivedObject( Object* obj )
+		{
+			if( !obj )
+			{
+				return nullptr;
+			}
+			if( obj->SuperClassID() != GEN_DERIVOB_CLASS_ID )
+			{
+				return nullptr;
+			}
+			return reinterpret_cast<IDerivedObject*>( obj );
+		}
+
+
+
+
 	/*------- ↑ Subject管理 ↑ ------- }}} */
 
 
@@ -1147,6 +1167,47 @@ private:
 
 	/*------- ↓ 汎用行列取得 ↓ ------- {{{ */
 
+
+
+
+		Matrix3		FMaxLiveLink::ConvertTransform( const FTransform& transform )
+		{
+			auto translation	= transform.GetTranslation();
+			auto scale			= transform.GetScale3D();
+			auto rotation		= transform.GetRotation();
+
+			AffineParts affine;
+			affine.t = Point3( translation.X,-translation.Y, translation.Z );
+			affine.k = Point3( scale.X, scale.Y, scale.Z );
+			affine.q = Quat( rotation.X, rotation.Y, rotation.Z, rotation.W );
+			affine.u = Quat( 0.0f, 0.0f, 0.0f, 1.0f );
+			affine.f = 1.0f;
+
+			Matrix3 srtm, rtm, ptm, stm, ftm;
+			ptm.IdentityMatrix();
+			ptm.SetTrans( affine.t );
+			affine.q.MakeMatrix( rtm );
+			affine.u.MakeMatrix( srtm );
+			stm = ScaleMatrix( affine.k );
+			ftm = ScaleMatrix( Point3( affine.f, affine.f, affine.f ) );
+			Matrix3 resultLocalMtx = Inverse( srtm ) * stm * srtm * rtm * ftm * ptm;
+
+			return resultLocalMtx;
+		}
+		FMatrix		FMaxLiveLink::ConvertMatrix( const Matrix3& srcMatrix )
+		{
+			auto row0 = srcMatrix.GetRow( 0 );
+			auto row1 = srcMatrix.GetRow( 1 );
+			auto row2 = srcMatrix.GetRow( 2 );
+			auto row3 = srcMatrix.GetRow( 3 );
+
+			return FMatrix(
+				FVector( row0.x, row0.y, row0.z ),
+				FVector( row1.x, row1.y, row1.z ),
+				FVector( row2.x, row2.y, row2.z ),
+				FVector( row3.x, row3.y, row3.z )
+			);
+		}
 
 		const Matrix3	FMaxLiveLink::FrontXMatrix(
 			Point3( 0.0f, 1.0f, 0.0f ),

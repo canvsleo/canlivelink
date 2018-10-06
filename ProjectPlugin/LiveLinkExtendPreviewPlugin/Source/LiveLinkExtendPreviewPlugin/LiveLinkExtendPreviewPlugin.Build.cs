@@ -1,4 +1,3 @@
-// Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
 namespace UnrealBuildTool.Rules
 {
@@ -11,13 +10,6 @@ namespace UnrealBuildTool.Rules
 
 			PrivateIncludePaths.AddRange(
 				new string[] {
-					"/LiveLinkExtendPreviewPlugin/Private",
-					"Engine/Plugins/Animation/LiveLink/Public",
-				}
-			);
-			
-			PublicIncludePaths.AddRange(
-				new string[] {
 					"Engine/Plugins/Animation/LiveLink/Public",
 				}
 			);
@@ -29,7 +21,7 @@ namespace UnrealBuildTool.Rules
 					"CoreUObject",
                     "UnrealEd",
                     "Engine",
-                    "Projects",
+					"Projects",
 					"RenderCore",
 
                     "Messaging",
@@ -41,13 +33,6 @@ namespace UnrealBuildTool.Rules
 					"Json"
 				}
 			);
-
-			SetupModulePhysXAPEXSupport(Target);
-			if(Target.bCompilePhysX && (Target.bBuildEditor || Target.bCompileAPEX))
-			{
-				DynamicallyLoadedModuleNames.Add("PhysXCooking");
-			}
-
 		}
 	}
 }

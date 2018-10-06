@@ -220,6 +220,8 @@ struct FLiveLinkExtendPoint4
 };
 
 
+
+
 /*! @struct		FLiveLinkSkinLink
 	@brief		1頂点と、ボーンを紐づける重みデータ
 */
@@ -874,6 +876,66 @@ struct FLiveLinkExtendVertexMeshData
 	}
 };
 
+/*! @struct		FLiveLinkExtendBoneBindPose
+	@brief		ボーンのバインドポーズデータ
+*/
+USTRUCT()
+struct FLiveLinkExtendBoneBindPose
+{
+	GENERATED_USTRUCT_BODY()
+
+
+		FLiveLinkExtendBoneBindPose()
+	{}
+
+	FLiveLinkExtendBoneBindPose(
+		const FString&		meshName,
+		const FMatrix&		bindPose
+	)
+		: MeshName( meshName )
+	{
+		this->BindPose.SetFromMatrix( bindPose );
+	}
+
+	FLiveLinkExtendBoneBindPose(
+		const FString&		meshName,
+		const FTransform&	bindPose
+	)
+		: MeshName( meshName )
+		, BindPose( bindPose )
+	{}
+
+	FString		MeshName;
+	FTransform	BindPose;
+
+
+	friend FArchive& operator<<( FArchive& Ar, FLiveLinkExtendBoneBindPose*& res )
+	{
+		return *res << Ar;
+	}
+	FArchive& operator<<( FArchive& Ar )
+	{
+		Ar << this->MeshName;
+		Ar << this->BindPose;
+		return Ar;
+	}
+
+	bool operator==( const FLiveLinkExtendBoneBindPose& rhs ) const
+	{
+		return (
+			this->MeshName == rhs.MeshName &&
+			this->BindPose.Equals( rhs.BindPose )
+			);
+	}
+
+	FORCEINLINE bool operator!=( const FLiveLinkExtendBoneBindPose& rhs ) const
+	{
+		return !( *this == rhs );
+	}
+
+};
+
+
 
 /*! @struct		FLiveLinkExtendSyncData
 	@brief		メッシュ同期データのルート
@@ -884,6 +946,7 @@ struct FLiveLinkExtendSyncData
 	GENERATED_USTRUCT_BODY()
 
 	TArray<FLiveLinkExtendVertexMeshData>	MeshList;
+	TArray<FLiveLinkExtendBoneBindPose>		BoneBindPoseList;
 
 
 	friend FArchive& operator<<( FArchive& Ar, FLiveLinkExtendSyncData*& res )
@@ -892,7 +955,9 @@ struct FLiveLinkExtendSyncData
 	}
 	FArchive& operator<<( FArchive& Ar )
 	{
-		return SerializeTArray( Ar, this->MeshList );
+		SerializeTArray( Ar, this->MeshList );
+		SerializeTArray( Ar, this->BoneBindPoseList );
+		return Ar;
 	}
 
 
@@ -902,6 +967,13 @@ struct FLiveLinkExtendSyncData
 		auto myMeshNum		= this->MeshList.Num();
 		auto otherMeshNum	= rhs.MeshList.Num();
 		if( myMeshNum != otherMeshNum )
+		{
+			return false;
+		}
+
+		auto myBindPoseNum		= this->BoneBindPoseList.Num();
+		auto otherBindPoseNum	= rhs.BoneBindPoseList.Num();
+		if( myBindPoseNum != otherBindPoseNum )
 		{
 			return false;
 		}
@@ -916,12 +988,23 @@ struct FLiveLinkExtendSyncData
 				}
 			}
 		}
+
+		{
+
+			for( int iBindPose = 0; iBindPose < myBindPoseNum; ++iBindPose )
+			{
+				if( this->BoneBindPoseList[ iBindPose ] != rhs.BoneBindPoseList[ iBindPose ] )
+				{
+					return false;
+				}
+			}
+		}
 		return true;
 	}
 
 	FORCEINLINE bool operator!=( const FLiveLinkExtendSyncData& rhs ) const
 	{
 		return !( *this == rhs );
-	}
+	}	
 };
 
